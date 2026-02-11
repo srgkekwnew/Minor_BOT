@@ -111,19 +111,21 @@ def get_main_keyboard():
     )
 def create_reading_stats_chart(user_id: int, categories_count: int, notes_count: int, 
                               notes_by_category: dict, notes_by_date: dict):
-    """Создать красивый график статистики чтения (работает на любом сервере)"""
+    """Создать график статистики чтения с поддержкой эмодзи"""
     
-    # Используем базовые шрифты, которые точно есть на всех системах
-    plt.rcParams['font.family'] = 'DejaVu Sans'
+    # === ПРИНУДИТЕЛЬНАЯ НАСТРОЙКА ШРИФТОВ ===
+    import matplotlib
+    matplotlib.rcParams['font.family'] = 'sans-serif'
+    matplotlib.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Helvetica', 'Liberation Sans']
+    matplotlib.rcParams['axes.unicode_minus'] = False
     
-    # Создаем фигуру с белым фоном
+    # Создаем фигуру
     fig, axes = plt.subplots(2, 2, figsize=(14, 10), facecolor='white')
     fig.suptitle('📚 Статистика чтения', fontsize=20, fontweight='bold', y=0.98)
     
-    # Заменяем эмодзи на текстовые символы
     colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD']
     
-    # ========== 1. КРУГОВАЯ ДИАГРАММА ==========
+    # === 1. КРУГОВАЯ ДИАГРАММА ===
     ax1 = axes[0, 0]
     ax1.set_facecolor('white')
     
@@ -132,12 +134,7 @@ def create_reading_stats_chart(user_id: int, categories_count: int, notes_count:
         category_counts = list(notes_by_category.values())
         
         # Обрезаем длинные названия
-        short_names = []
-        for name in category_names:
-            if len(name) > 20:
-                short_names.append(name[:17] + '...')
-            else:
-                short_names.append(name)
+        short_names = [name[:15] + '...' if len(name) > 15 else name for name in category_names]
         
         wedges, texts, autotexts = ax1.pie(
             category_counts, 
@@ -145,27 +142,21 @@ def create_reading_stats_chart(user_id: int, categories_count: int, notes_count:
             colors=colors[:len(category_names)],
             autopct='%1.1f%%',
             startangle=90,
-            wedgeprops={'edgecolor': 'white', 'linewidth': 2, 'antialiased': True}
+            wedgeprops={'edgecolor': 'white', 'linewidth': 2}
         )
         
         for autotext in autotexts:
             autotext.set_color('white')
             autotext.set_fontweight('bold')
-            autotext.set_fontsize(10)
         
-        for text in texts:
-            text.set_fontsize(10)
-            text.set_fontweight('bold')
-        
-        ax1.set_title('1. Распределение заметок по категориям', fontsize=14, pad=20, fontweight='bold')
+        ax1.set_title('Распределение заметок по категориям', fontsize=14, pad=20, fontweight='bold')
         ax1.axis('equal')
     else:
-        ax1.text(0.5, 0.5, 'Нет данных', ha='center', va='center', 
-                fontsize=14, transform=ax1.transAxes)
-        ax1.set_title('1. Распределение заметок по категориям', fontsize=14, pad=20, fontweight='bold')
+        ax1.text(0.5, 0.5, 'Нет данных', ha='center', va='center', fontsize=14, transform=ax1.transAxes)
+        ax1.set_title('Распределение заметок по категориям', fontsize=14, pad=20, fontweight='bold')
         ax1.axis('off')
     
-    # ========== 2. СТОЛБЧАТАЯ ДИАГРАММА ==========
+    # === 2. СТОЛБЧАТАЯ ДИАГРАММА ===
     ax2 = axes[0, 1]
     ax2.set_facecolor('white')
     
@@ -173,38 +164,28 @@ def create_reading_stats_chart(user_id: int, categories_count: int, notes_count:
         dates = list(notes_by_date.keys())
         counts = list(notes_by_date.values())
         
-        bars = ax2.bar(dates, counts, color=colors[0], edgecolor='white', 
-                      linewidth=2, alpha=0.8)
+        bars = ax2.bar(dates, counts, color=colors[0], edgecolor='white', linewidth=2, alpha=0.8)
         
-        # Добавляем значения на столбцы
         for bar, count in zip(bars, counts):
             height = bar.get_height()
             ax2.text(bar.get_x() + bar.get_width()/2., height + 0.1,
-                    f'{count}', ha='center', va='bottom', fontweight='bold', fontsize=11)
+                    f'{count}', ha='center', va='bottom', fontweight='bold')
         
-        ax2.set_title('2. Активность по дням (30 дней)', fontsize=14, pad=20, fontweight='bold')
+        ax2.set_title('Активность по дням (30 дней)', fontsize=14, pad=20, fontweight='bold')
         ax2.set_xlabel('Дата', fontsize=11)
         ax2.set_ylabel('Количество заметок', fontsize=11)
         ax2.tick_params(axis='x', rotation=45)
         ax2.grid(True, alpha=0.3, linestyle='--')
-        
-        # Ограничиваем количество меток
-        if len(dates) > 8:
-            for i, label in enumerate(ax2.get_xticklabels()):
-                if i % 2 != 0:
-                    label.set_visible(False)
     else:
-        ax2.text(0.5, 0.5, 'Нет данных за 30 дней', ha='center', va='center', 
-                fontsize=14, transform=ax2.transAxes)
-        ax2.set_title('2. Активность по дням (30 дней)', fontsize=14, pad=20, fontweight='bold')
+        ax2.text(0.5, 0.5, 'Нет данных за 30 дней', ha='center', va='center', fontsize=14, transform=ax2.transAxes)
+        ax2.set_title('Активность по дням (30 дней)', fontsize=14, pad=20, fontweight='bold')
         ax2.axis('off')
     
-    # ========== 3. ОБЩАЯ СТАТИСТИКА ==========
+    # === 3. ОБЩАЯ СТАТИСТИКА ===
     ax3 = axes[1, 0]
     ax3.axis('off')
     ax3.set_facecolor('white')
     
-    # Безопасное получение дат
     first_note = 'Н/Д'
     last_note = 'Н/Д'
     most_active = 'Н/Д'
@@ -222,7 +203,7 @@ def create_reading_stats_chart(user_id: int, categories_count: int, notes_count:
     
     stats_text = (
         f"📊 ОБЩАЯ СТАТИСТИКА\n"
-        f"{'='*25}\n\n"
+        f"{'─' * 25}\n\n"
         f"📂 Категорий:        {categories_count}\n"
         f"📝 Всего заметок:    {notes_count}\n"
         f"📅 Первая заметка:   {first_note}\n"
@@ -236,44 +217,32 @@ def create_reading_stats_chart(user_id: int, categories_count: int, notes_count:
             bbox=dict(boxstyle='round,pad=0.7', facecolor='#F8F9FA', 
                      alpha=0.9, edgecolor='#DEE2E6', linewidth=2))
     
-    # ========== 4. ПРОГРЕСС И ДОСТИЖЕНИЯ ==========
+    # === 4. ПРОГРЕСС И ДОСТИЖЕНИЯ ===
     ax4 = axes[1, 1]
     ax4.axis('off')
     ax4.set_facecolor('white')
     
     if categories_count > 0:
-        # Визуализация прогресса текстовыми символами (работает везде!)
-        cat_filled = min(categories_count, 10)
-        cat_empty = 10 - cat_filled
-        cat_bar = '█' * cat_filled + '░' * cat_empty
-        
-        notes_filled = min(notes_count // 5, 20)
-        notes_empty = 20 - notes_filled
-        notes_bar = '█' * notes_filled + '░' * notes_empty
-        
         # Определение уровня
-        if notes_count >= 100:
-            level = "МУДРЕЦ"
-            level_icon = "👑"
-        elif notes_count >= 50:
-            level = "ЗАЯДЛЫЙ ЧИТАТЕЛЬ"
+        if notes_count >= 50:
+            level = "🏆 ЗАЯДЛЫЙ ЧИТАТЕЛЬ"
             level_icon = "🏆"
         elif notes_count >= 20:
-            level = "АКТИВНЫЙ ЧИТАТЕЛЬ"
+            level = "👍 АКТИВНЫЙ ЧИТАТЕЛЬ"
             level_icon = "👍"
         elif notes_count >= 10:
-            level = "НАЧИНАЮЩИЙ"
+            level = "🌱 НАЧИНАЮЩИЙ"
             level_icon = "🌱"
         else:
-            level = "СТАРТ"
+            level = "🚀 СТАРТ"
             level_icon = "🚀"
         
         progress_text = (
             f"🎯 ПРОГРЕСС И ДОСТИЖЕНИЯ\n"
-            f"{'='*25}\n\n"
-            f"📚 Категории:\n{cat_bar} {categories_count}/10\n\n"
-            f"📝 Заметки:\n{notes_bar} {notes_count}/100\n\n"
+            f"{'─' * 25}\n\n"
             f"{level_icon} Уровень: {level}\n\n"
+            f"📚 Категорий: {categories_count}/10\n"
+            f"📝 Заметок:   {notes_count}/100\n\n"
         )
         
         # Мотивационное сообщение
@@ -284,7 +253,7 @@ def create_reading_stats_chart(user_id: int, categories_count: int, notes_count:
         elif notes_count >= 10:
             progress_text += "🌟 Так держать!"
         else:
-            progress_text += "📖 Продолжайте читать!"
+            progress_text += "📖 Продолжайте читать каждый день!"
         
         ax4.text(0.1, 0.95, progress_text, fontsize=12, verticalalignment='top',
                 transform=ax4.transAxes,
@@ -297,18 +266,15 @@ def create_reading_stats_chart(user_id: int, categories_count: int, notes_count:
                 bbox=dict(boxstyle='round,pad=0.7', facecolor='#E3F2FD', 
                          alpha=0.9, edgecolor='#90CAF9', linewidth=2))
     
-    # Настройка отступов
     plt.tight_layout()
     
-    # Сохраняем в буфер с высоким качеством
+    # Сохраняем
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', 
-                facecolor=fig.get_facecolor(), edgecolor='none')
+    plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', facecolor='white')
     buf.seek(0)
     plt.close(fig)
     
     return buf
-
 # ===========================================
 # ФУНКЦИИ ДЛЯ РАБОТЫ С ЗАМЕТКАМИ
 # ===========================================
