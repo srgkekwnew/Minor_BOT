@@ -109,315 +109,10 @@ def get_main_keyboard():
         resize_keyboard=True,
         input_field_placeholder="Выбери действие..."
     )
-# ===========================================
-# ФУНКЦИЯ СОЗДАНИЯ ГРАФИКОВ (3 ГРАФИКА)
-# ===========================================
-def create_reading_stats_chart(notes_by_category: dict, notes_by_date: dict, time_by_date: dict):
-    """Создать 3 графика: 
-       1. Круговая - заметки по категориям
-       2. Столбчатая - заметки по дням
-       3. Столбчатая - время чтения по дням
-    """
-    
-    # Создаем фигуру с 3 подграфиками
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, figsize=(18, 6), facecolor='white')
-    fig.suptitle('Статистика чтения', fontsize=18, fontweight='bold', y=1.05)
-    
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD']
-    
-    # === ГРАФИК 1: КРУГОВАЯ ДИАГРАММА (КАТЕГОРИИ) ===
-    ax1.set_facecolor('white')
-    
-    if notes_by_category and sum(notes_by_category.values()) > 0:
-        category_names = list(notes_by_category.keys())
-        category_counts = list(notes_by_category.values())
-        
-        # Обрезаем длинные названия
-        short_names = []
-        for name in category_names:
-            if len(name) > 15:
-                short_names.append(name[:12] + '...')
-            else:
-                short_names.append(name)
-        
-        wedges, texts, autotexts = ax1.pie(
-            category_counts, 
-            labels=short_names,
-            colors=colors[:len(category_names)],
-            autopct='%1.0f%%',
-            startangle=90,
-            wedgeprops={'edgecolor': 'white', 'linewidth': 2, 'antialiased': True}
-        )
-        
-        for autotext in autotexts:
-            autotext.set_color('white')
-            autotext.set_fontweight('bold')
-            autotext.set_fontsize(9)
-        
-        for text in texts:
-            text.set_fontsize(9)
-            text.set_fontweight('bold')
-        
-        ax1.set_title('Заметки по категориям', fontsize=13, pad=15, fontweight='bold')
-        ax1.axis('equal')
-    else:
-        ax1.text(0.5, 0.5, 'Нет данных', ha='center', va='center', 
-                fontsize=12, transform=ax1.transAxes)
-        ax1.set_title('Заметки по категориям', fontsize=13, pad=15, fontweight='bold')
-        ax1.axis('off')
-    
-    # === ГРАФИК 2: СТОЛБЧАТАЯ ДИАГРАММА (ЗАМЕТКИ ПО ДНЯМ) ===
-    ax2.set_facecolor('white')
-    
-    if notes_by_date and len(notes_by_date) > 0:
-        # Берем последние 10 дней
-        dates = sorted(notes_by_date.keys())[-10:]
-        date_labels = [d[-5:] if len(d) > 5 else d for d in dates]
-        note_counts = [notes_by_date.get(d, 0) for d in dates]
-        
-        x = range(len(dates))
-        
-        bars = ax2.bar(x, note_counts, color=colors[0], edgecolor='white', linewidth=2, width=0.7)
-        
-        # Добавляем значения
-        for bar, count in zip(bars, note_counts):
-            height = bar.get_height()
-            if height > 0:
-                ax2.text(bar.get_x() + bar.get_width()/2, height + 0.1,
-                        f'{int(height)}', ha='center', va='bottom', fontweight='bold', fontsize=9)
-        
-        ax2.set_title('Заметки по дням', fontsize=13, pad=15, fontweight='bold')
-        ax2.set_xlabel('Дата', fontsize=10)
-        ax2.set_ylabel('Количество заметок', fontsize=10)
-        ax2.set_xticks(x)
-        ax2.set_xticklabels(date_labels, rotation=45, ha='right')
-        ax2.grid(True, alpha=0.3, axis='y', linestyle='--')
-    else:
-        ax2.text(0.5, 0.5, 'Нет данных за 30 дней', ha='center', va='center', 
-                fontsize=12, transform=ax2.transAxes)
-        ax2.set_title('Заметки по дням', fontsize=13, pad=15, fontweight='bold')
-        ax2.axis('off')
-    
-    # === ГРАФИК 3: СТОЛБЧАТАЯ ДИАГРАММА (ВРЕМЯ ПО ДНЯМ) ===
-    ax3.set_facecolor('white')
-    
-    if time_by_date and len(time_by_date) > 0:
-        # Берем последние 10 дней
-        dates = sorted(time_by_date.keys())[-10:]
-        date_labels = [d[-5:] if len(d) > 5 else d for d in dates]
-        time_minutes = [time_by_date.get(d, 0) / 60 for d in dates]  # в минутах
-        
-        x = range(len(dates))
-        
-        bars = ax3.bar(x, time_minutes, color=colors[1], edgecolor='white', linewidth=2, width=0.7)
-        
-        # Добавляем значения
-        for bar, minutes in zip(bars, time_minutes):
-            height = bar.get_height()
-            if height > 0:
-                ax3.text(bar.get_x() + bar.get_width()/2, height + 0.5,
-                        f'{int(minutes)}м', ha='center', va='bottom', fontweight='bold', fontsize=9)
-        
-        ax3.set_title('Время чтения по дням', fontsize=13, pad=15, fontweight='bold')
-        ax3.set_xlabel('Дата', fontsize=10)
-        ax3.set_ylabel('Минуты', fontsize=10)
-        ax3.set_xticks(x)
-        ax3.set_xticklabels(date_labels, rotation=45, ha='right')
-        ax3.grid(True, alpha=0.3, axis='y', linestyle='--')
-    else:
-        ax3.text(0.5, 0.5, 'Нет данных о времени', ha='center', va='center', 
-                fontsize=12, transform=ax3.transAxes)
-        ax3.set_title('Время чтения по дням', fontsize=13, pad=15, fontweight='bold')
-        ax3.axis('off')
-    
-    plt.tight_layout()
-    
-    # Сохраняем
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', facecolor='white')
-    buf.seek(0)
-    plt.close(fig)
-    
-    return buf
 
 
-# ===========================================
-# ФУНКЦИЯ СОЗДАНИЯ ГРАФИКОВ (2 ГРАФИКА)
-# ===========================================
-def create_reading_stats_chart(notes_by_date: dict, time_by_date: dict):
-    """Создать 2 графика: 
-       1. Столбчатая - заметки по дням
-       2. Столбчатая - время чтения по дням
-    """
-    
-    # Создаем фигуру с 2 подграфиками
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5), facecolor='white')
-    fig.suptitle('Активность чтения за 30 дней', fontsize=16, fontweight='bold', y=1.02)
-    
-    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']
-    
-    # === ГРАФИК 1: СТОЛБЧАТАЯ ДИАГРАММА (ЗАМЕТКИ ПО ДНЯМ) ===
-    ax1.set_facecolor('white')
-    
-    if notes_by_date and len(notes_by_date) > 0:
-        # Берем последние 10 дней
-        dates = sorted(notes_by_date.keys())[-10:]
-        date_labels = [d[-5:] if len(d) > 5 else d for d in dates]
-        note_counts = [notes_by_date.get(d, 0) for d in dates]
-        
-        x = range(len(dates))
-        
-        bars = ax1.bar(x, note_counts, color=colors[0], edgecolor='white', linewidth=2, width=0.7)
-        
-        # Добавляем значения
-        for bar, count in zip(bars, note_counts):
-            height = bar.get_height()
-            if height > 0:
-                ax1.text(bar.get_x() + bar.get_width()/2, height + 0.1,
-                        f'{int(height)}', ha='center', va='bottom', fontweight='bold', fontsize=10)
-        
-        ax1.set_title('Заметки по дням', fontsize=14, pad=15, fontweight='bold')
-        ax1.set_xlabel('Дата', fontsize=11)
-        ax1.set_ylabel('Количество заметок', fontsize=11)
-        ax1.set_xticks(x)
-        ax1.set_xticklabels(date_labels, rotation=45, ha='right')
-        ax1.grid(True, alpha=0.3, axis='y', linestyle='--')
-    else:
-        ax1.text(0.5, 0.5, 'Нет данных за 30 дней', ha='center', va='center', 
-                fontsize=12, transform=ax1.transAxes)
-        ax1.set_title('Заметки по дням', fontsize=14, pad=15, fontweight='bold')
-        ax1.axis('off')
-    
-    # === ГРАФИК 2: СТОЛБЧАТАЯ ДИАГРАММА (ВРЕМЯ ПО ДНЯМ) ===
-    ax2.set_facecolor('white')
-    
-    if time_by_date and len(time_by_date) > 0:
-        # Берем последние 10 дней
-        dates = sorted(time_by_date.keys())[-10:]
-        date_labels = [d[-5:] if len(d) > 5 else d for d in dates]
-        time_minutes = [time_by_date.get(d, 0) / 60 for d in dates]  # в минутах
-        
-        x = range(len(dates))
-        
-        bars = ax2.bar(x, time_minutes, color=colors[1], edgecolor='white', linewidth=2, width=0.7)
-        
-        # Добавляем значения
-        for bar, minutes in zip(bars, time_minutes):
-            height = bar.get_height()
-            if height > 0:
-                ax2.text(bar.get_x() + bar.get_width()/2, height + 0.5,
-                        f'{int(minutes)}м', ha='center', va='bottom', fontweight='bold', fontsize=10)
-        
-        ax2.set_title('Время чтения по дням', fontsize=14, pad=15, fontweight='bold')
-        ax2.set_xlabel('Дата', fontsize=11)
-        ax2.set_ylabel('Минуты', fontsize=11)
-        ax2.set_xticks(x)
-        ax2.set_xticklabels(date_labels, rotation=45, ha='right')
-        ax2.grid(True, alpha=0.3, axis='y', linestyle='--')
-    else:
-        ax2.text(0.5, 0.5, 'Нет данных о времени', ha='center', va='center', 
-                fontsize=12, transform=ax2.transAxes)
-        ax2.set_title('Время чтения по дням', fontsize=14, pad=15, fontweight='bold')
-        ax2.axis('off')
-    
-    plt.tight_layout()
-    
-    # Сохраняем
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', facecolor='white')
-    buf.seek(0)
-    plt.close(fig)
-    
-    return buf
 
-# ===========================================
-# ФУНКЦИЯ СОЗДАНИЯ ГРАФИКОВ (2 СТОЛБЧАТЫЕ ДИАГРАММЫ)
-# ===========================================
-def create_reading_stats_chart(notes_by_date: dict, time_by_date: dict):
-    """Создать 2 графика: 
-       1. Столбчатая - заметки по дням
-       2. Столбчатая - время чтения по дням
-    """
-    
-    # Создаем фигуру с 2 подграфиками
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5), facecolor='white')
-    fig.suptitle('Активность чтения за 30 дней', fontsize=16, fontweight='bold', y=1.02)
-    
-    colors = ['#FF6B6B', '#4ECDC4']
-    
-    # === ГРАФИК 1: СТОЛБЧАТАЯ ДИАГРАММА (ЗАМЕТКИ ПО ДНЯМ) ===
-    ax1.set_facecolor('white')
-    
-    if notes_by_date and len(notes_by_date) > 0:
-        # Берем последние 10 дней
-        dates = sorted(notes_by_date.keys())[-10:]
-        date_labels = [d[-5:] if len(d) > 5 else d for d in dates]
-        note_counts = [notes_by_date.get(d, 0) for d in dates]
-        
-        x = range(len(dates))
-        
-        bars = ax1.bar(x, note_counts, color=colors[0], edgecolor='white', linewidth=2, width=0.7)
-        
-        # Добавляем значения
-        for bar, count in zip(bars, note_counts):
-            height = bar.get_height()
-            if height > 0:
-                ax1.text(bar.get_x() + bar.get_width()/2, height + 0.1,
-                        f'{int(height)}', ha='center', va='bottom', fontweight='bold', fontsize=10)
-        
-        ax1.set_title('Заметки по дням', fontsize=14, pad=15, fontweight='bold')
-        ax1.set_xlabel('Дата', fontsize=11)
-        ax1.set_ylabel('Количество заметок', fontsize=11)
-        ax1.set_xticks(x)
-        ax1.set_xticklabels(date_labels, rotation=45, ha='right')
-        ax1.grid(True, alpha=0.3, axis='y', linestyle='--')
-    else:
-        ax1.text(0.5, 0.5, 'Нет данных за 30 дней', ha='center', va='center', 
-                fontsize=12, transform=ax1.transAxes)
-        ax1.set_title('Заметки по дням', fontsize=14, pad=15, fontweight='bold')
-        ax1.axis('off')
-    
-    # === ГРАФИК 2: СТОЛБЧАТАЯ ДИАГРАММА (ВРЕМЯ ПО ДНЯМ) ===
-    ax2.set_facecolor('white')
-    
-    if time_by_date and len(time_by_date) > 0:
-        # Берем последние 10 дней
-        dates = sorted(time_by_date.keys())[-10:]
-        date_labels = [d[-5:] if len(d) > 5 else d for d in dates]
-        time_minutes = [time_by_date.get(d, 0) / 60 for d in dates]  # в минутах
-        
-        x = range(len(dates))
-        
-        bars = ax2.bar(x, time_minutes, color=colors[1], edgecolor='white', linewidth=2, width=0.7)
-        
-        # Добавляем значения
-        for bar, minutes in zip(bars, time_minutes):
-            height = bar.get_height()
-            if height > 0:
-                ax2.text(bar.get_x() + bar.get_width()/2, height + 0.5,
-                        f'{int(minutes)}м', ha='center', va='bottom', fontweight='bold', fontsize=10)
-        
-        ax2.set_title('Время чтения по дням', fontsize=14, pad=15, fontweight='bold')
-        ax2.set_xlabel('Дата', fontsize=11)
-        ax2.set_ylabel('Минуты', fontsize=11)
-        ax2.set_xticks(x)
-        ax2.set_xticklabels(date_labels, rotation=45, ha='right')
-        ax2.grid(True, alpha=0.3, axis='y', linestyle='--')
-    else:
-        ax2.text(0.5, 0.5, 'Нет данных о времени', ha='center', va='center', 
-                fontsize=12, transform=ax2.transAxes)
-        ax2.set_title('Время чтения по дням', fontsize=14, pad=15, fontweight='bold')
-        ax2.axis('off')
-    
-    plt.tight_layout()
-    
-    # Сохраняем
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', facecolor='white')
-    buf.seek(0)
-    plt.close(fig)
-    
-    return buf
+
 
 
 # ===========================================
@@ -505,6 +200,7 @@ def create_reading_stats_chart(notes_by_date: dict, time_by_date: dict):
     plt.close(fig)
     
     return buf
+
 
 
 # ===========================================
@@ -857,9 +553,9 @@ async def show_statistics(message: Message):
     
     # === БЛОК 4: САМЫЕ АКТИВНЫЕ ДНИ ===
     if most_active_day != "—":
-        text += f"🔥 <b>САМЫЙ АКТИВНЫЙ ДЕНЬ (ЗАМЕТКИ):</b> {most_active_day[-5:]} • {max_notes_in_day} заметок\n"
+        text += f"🔥 <b>Самый активный день (заметки):</b> {most_active_day[-5:]} • {max_notes_in_day} заметок\n"
     if most_reading_day != "—":
-        text += f"⏱️ <b>САМЫЙ АКТИВНЫЙ ДЕНЬ (ВРЕМЯ):</b> {most_reading_day[-5:]} • {format_time_short(int(max_time_in_day))}\n\n"
+        text += f"⏱️ <b>Самый активный день (время):</b> {most_reading_day[-5:]} • {format_time_short(int(max_time_in_day))}\n\n"
     
     # === БЛОК 5: ТОП КАТЕГОРИЙ ===
     if notes_by_category:
@@ -881,7 +577,7 @@ async def show_statistics(message: Message):
     if recent_notes:
         text += f"🕐 <b>ПОСЛЕДНИЕ ЗАМЕТКИ:</b>\n"
         for content, date in recent_notes[:3]:
-            date_str = date.strftime('%d.%m.%Y')
+            date_str = date.strftime('%d.%m')
             short_content = content[:30] + "..." if len(content) > 30 else content
             text += f"   • {date_str}: {short_content}\n"
         text += "\n"
@@ -944,7 +640,6 @@ async def show_statistics(message: Message):
     text += f"💡 <b>СОВЕТ ДНЯ:</b>\n   {tip}"
     
     await message.answer(text, parse_mode='HTML')
-
         # ФУНКЦИИ ДЛЯ РАБОТЫ С ЗАМЕТКАМИ
 # ===========================================
 async def create_text_note(user_id: int, category_id: int, text: str, session_id: int = None) -> Note:
