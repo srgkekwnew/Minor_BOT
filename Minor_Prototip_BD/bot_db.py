@@ -1986,32 +1986,31 @@ async def show_statistics(message: Message):
                 else:
                     night += session_obj.duration_seconds
             
-            # === СТРЕЙК-СЕРИЯ (ОГОНЕК) ===
-            today = datetime.utcnow().date()
-            streak = 0
-            check_date = today
-            
-            while True:
-                has_activity = await session.execute(
-                    select(Note.id)
-                    .where(
-                        Note.user_id == user_id,
-                        func.date(Note.created_at) == check_date.strftime('%Y-%m-%d'),
-                        Note.is_deleted == False
+                # === СТРЕЙК-СЕРИЯ (ОГОНЕК ДЛЯ ТЕСТОВОГО ПЕРИОДА) ===
+                today = datetime.utcnow().date()
+                streak = 0
+                check_date = today
+
+                # Считаем дни подряд с сегодняшнего дня вниз
+                while True:
+                    has_activity = await session.execute(
+                        select(Note.id)
+                        .where(
+                            Note.user_id == user_id,
+                            func.date(Note.created_at) == check_date.strftime('%Y-%m-%d'),
+                            Note.is_deleted == False
+                        )
+                        .limit(1)
                     )
-                    .limit(1)
-                )
-                if has_activity.first():
-                    streak += 1
-                    check_date -= timedelta(days=1)
-                else:
-                    break
-            
-            # Максимальный стрейк
-            max_streak = streak  # В реальности нужно хранить в БД
-            if streak > max_streak:
+    
+                    if has_activity.first():
+                        streak += 1
+                        check_date -= timedelta(days=1)
+                    else:
+                        break
+
+                # Максимальный стрейк за всё время (пока просто равен текущему)
                 max_streak = streak
-            
             # === ЕЖЕНЕДЕЛЬНАЯ СТАТИСТИКА ===
             weeks_ago = datetime.utcnow() - timedelta(days=90)
             weekly_stats = await session.execute(
@@ -2308,27 +2307,64 @@ async def show_statistics(message: Message):
     
     # === ОГОНЕК (DUOLINGO СТИЛЬ) ===
     if streak == 0:
-        fire = "🕯️"
-        fire_text = "Начните серию сегодня!"
-    elif streak < 3:
-        fire = "🔥" * streak
-        fire_text = f"{streak} дня подряд! 🔥"
-    elif streak < 7:
-        fire = "🔥" * 3 + f" +{streak-3}"
-        fire_text = f"{streak} дней! Вы в ритме! 🔥"
-    elif streak < 14:
-        fire = "🔥🔥🔥" + f" +{streak-3}"
-        fire_text = f"{streak} дней! Не останавливайтесь! 🔥"
-    elif streak < 30:
-        fire = "🔥🔥🔥🔥" + f" +{streak-4}"
-        fire_text = f"{streak} дней! Фантастика! 🔥"
-    elif streak < 60:
-        fire = "🔥" * 5 + f" +{streak-5}"
-        fire_text = f"{streak} дней! Вы легенда! 👑"
+        fire_icon = "🕯️"
+        fire_text = "Начните серию сегодня! 🔥"
+        fire_color = "⚪"
+    elif streak == 1:
+        fire_icon = "🔥"
+        fire_text = "1 день! Продолжайте! 🔥"
+    elif streak == 2:
+        fire_icon = "🔥🔥"
+        fire_text = "2 дня подряд! 👍"
+    elif streak == 3:
+        fire_icon = "🔥🔥🔥"
+        fire_text = "3 дня! Маленькая победа! 🎯"
+    elif streak == 4:
+        fire_icon = "🔥🔥🔥🔥"
+        fire_text = "4 дня! Вы в ритме! ⚡"
+    elif streak == 5:
+        fire_icon = "🔥🔥🔥🔥🔥"
+        fire_text = "5 дней! Половина недели! 🌟"
+    elif streak == 6:
+        fire_icon = "🔥🔥🔥🔥🔥🔥"
+        fire_text = "6 дней! Завтра будет НЕДЕЛЯ! 📅"
+    elif streak == 7:
+        fire_icon = "🔥🔥🔥🔥🔥🔥🔥"
+        fire_text = "🌟 НЕДЕЛЯ! Поздравляем! 🏆"
+    elif streak == 8:
+        fire_icon = "🔥🔥🔥🔥🔥🔥🔥🔥"
+        fire_text = "8 дней! Неделя +1! 💪"
+    elif streak == 9:
+        fire_icon = "🔥🔥🔥🔥🔥🔥🔥🔥🔥"
+        fire_text = "9 дней! Скоро 2 недели! ⏳"
+    elif streak == 10:
+        fire_icon = "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥"
+        fire_text = "10 ДНЕЙ! Двойная цифра! 🎉"
+    elif streak == 11:
+        fire_icon = "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥"
+        fire_text = "11 дней! Вы неутомимы! ✨"
+    elif streak == 12:
+        fire_icon = "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥"
+        fire_text = "12 дней! Ещё 2 дня до рекорда! 🚀"
+    elif streak == 13:
+        fire_icon = "🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥"
+        fire_text = "13 дней! Завтра 2 НЕДЕЛИ! ⚡"
+    elif streak == 14:
+        fire_icon = "⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡⚡"
+        fire_text = "🎯 2 НЕДЕЛИ! Фантастика! 👑"
     else:
-        fire = "🔥" * 5 + "∞"
-        fire_text = f"{streak}+ дней! Бессмертный! ⚡"
-    
+    # На случай если тесты затянутся
+    weeks = streak // 7
+    days = streak % 7
+    if weeks == 2:
+        fire_icon = "🏆🏆🏆🏆🏆🏆🏆🏆🏆🏆🏆🏆🏆🏆"
+        fire_text = f"{streak} дней! 2 полные недели! 🎯"
+    elif weeks == 3:
+        fire_icon = "👑👑👑👑👑👑👑👑👑👑👑👑👑👑"
+        fire_text = f"{streak} дней! 3 недели! Вы легенда! ✨"
+    else:
+        fire_icon = "🔥" * 7 + f" +{streak-7}"
+        fire_text = f"{streak} дней! Отличный результат! 🌟"    
     # === ДОСТИЖЕНИЯ (30+ ШТУК) ===
     achievements = []
     
