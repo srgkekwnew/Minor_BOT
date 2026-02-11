@@ -111,142 +111,199 @@ def get_main_keyboard():
     )
 def create_reading_stats_chart(user_id: int, categories_count: int, notes_count: int, 
                               notes_by_category: dict, notes_by_date: dict):
-    """Создать красивый график статистики чтения"""
+    """Создать красивый график статистики чтения (работает на любом сервере)"""
     
-    # Создаем фигуру с несколькими субплогами
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle('📚 Статистика чтения', fontsize=20, fontweight='bold', y=1.02)
+    # Используем базовые шрифты, которые точно есть на всех системах
+    plt.rcParams['font.family'] = 'DejaVu Sans'
     
+    # Создаем фигуру с белым фоном
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10), facecolor='white')
+    fig.suptitle('📚 Статистика чтения', fontsize=20, fontweight='bold', y=0.98)
+    
+    # Заменяем эмодзи на текстовые символы
     colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD']
     
-    # 1. Круговая диаграмма: Заметки по категориям
-    if notes_by_category:
-        ax1 = axes[0, 0]
+    # ========== 1. КРУГОВАЯ ДИАГРАММА ==========
+    ax1 = axes[0, 0]
+    ax1.set_facecolor('white')
+    
+    if notes_by_category and sum(notes_by_category.values()) > 0:
         category_names = list(notes_by_category.keys())
         category_counts = list(notes_by_category.values())
         
-        # Проверяем, есть ли данные для диаграммы
-        if sum(category_counts) > 0:
-            short_names = [name[:15] + '...' if len(name) > 15 else name for name in category_names]
-            
-            wedges, texts, autotexts = ax1.pie(
-                category_counts, 
-                labels=short_names, 
-                colors=colors[:len(category_names)],
-                autopct='%1.1f%%',
-                startangle=90,
-                wedgeprops={'edgecolor': 'white', 'linewidth': 2}
-            )
-            
-            for autotext in autotexts:
-                autotext.set_color('white')
-                autotext.set_fontweight('bold')
-            
-            ax1.set_title('📂 Распределение заметок по категориям', fontsize=14, pad=20)
-            ax1.axis('equal')
-        else:
-            ax1.text(0.5, 0.5, 'Нет данных', ha='center', va='center', fontsize=12)
-            ax1.set_title('📂 Распределение заметок по категориям', fontsize=14, pad=20)
-            ax1.axis('off')
+        # Обрезаем длинные названия
+        short_names = []
+        for name in category_names:
+            if len(name) > 20:
+                short_names.append(name[:17] + '...')
+            else:
+                short_names.append(name)
+        
+        wedges, texts, autotexts = ax1.pie(
+            category_counts, 
+            labels=short_names, 
+            colors=colors[:len(category_names)],
+            autopct='%1.1f%%',
+            startangle=90,
+            wedgeprops={'edgecolor': 'white', 'linewidth': 2, 'antialiased': True}
+        )
+        
+        for autotext in autotexts:
+            autotext.set_color('white')
+            autotext.set_fontweight('bold')
+            autotext.set_fontsize(10)
+        
+        for text in texts:
+            text.set_fontsize(10)
+            text.set_fontweight('bold')
+        
+        ax1.set_title('1. Распределение заметок по категориям', fontsize=14, pad=20, fontweight='bold')
+        ax1.axis('equal')
     else:
-        axes[0, 0].text(0.5, 0.5, 'Нет данных', ha='center', va='center', fontsize=12)
-        axes[0, 0].set_title('📂 Распределение заметок по категориям', fontsize=14, pad=20)
-        axes[0, 0].axis('off')
+        ax1.text(0.5, 0.5, 'Нет данных', ha='center', va='center', 
+                fontsize=14, transform=ax1.transAxes)
+        ax1.set_title('1. Распределение заметок по категориям', fontsize=14, pad=20, fontweight='bold')
+        ax1.axis('off')
     
-    # 2. Столбчатая диаграмма: Активность по дням
-    if notes_by_date:
-        ax2 = axes[0, 1]
+    # ========== 2. СТОЛБЧАТАЯ ДИАГРАММА ==========
+    ax2 = axes[0, 1]
+    ax2.set_facecolor('white')
+    
+    if notes_by_date and len(notes_by_date) > 0 and sum(notes_by_date.values()) > 0:
         dates = list(notes_by_date.keys())
         counts = list(notes_by_date.values())
         
-        if len(dates) > 0 and sum(counts) > 0:
-            bars = ax2.bar(dates, counts, color=colors[0], edgecolor='white', linewidth=2)
-            
-            for bar, count in zip(bars, counts):
-                height = bar.get_height()
-                ax2.text(bar.get_x() + bar.get_width()/2., height + 0.1,
-                        f'{count}', ha='center', va='bottom', fontweight='bold')
-            
-            ax2.set_title('📅 Активность по дням', fontsize=14, pad=20)
-            ax2.set_xlabel('Дата')
-            ax2.set_ylabel('Количество заметок')
-            ax2.tick_params(axis='x', rotation=45)
-            ax2.grid(True, alpha=0.3)
-        else:
-            ax2.text(0.5, 0.5, 'Нет данных за последние 30 дней', ha='center', va='center', fontsize=12)
-            ax2.set_title('📅 Активность по дням', fontsize=14, pad=20)
-            ax2.axis('off')
+        bars = ax2.bar(dates, counts, color=colors[0], edgecolor='white', 
+                      linewidth=2, alpha=0.8)
+        
+        # Добавляем значения на столбцы
+        for bar, count in zip(bars, counts):
+            height = bar.get_height()
+            ax2.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                    f'{count}', ha='center', va='bottom', fontweight='bold', fontsize=11)
+        
+        ax2.set_title('2. Активность по дням (30 дней)', fontsize=14, pad=20, fontweight='bold')
+        ax2.set_xlabel('Дата', fontsize=11)
+        ax2.set_ylabel('Количество заметок', fontsize=11)
+        ax2.tick_params(axis='x', rotation=45)
+        ax2.grid(True, alpha=0.3, linestyle='--')
+        
+        # Ограничиваем количество меток
+        if len(dates) > 8:
+            for i, label in enumerate(ax2.get_xticklabels()):
+                if i % 2 != 0:
+                    label.set_visible(False)
     else:
-        axes[0, 1].text(0.5, 0.5, 'Нет данных за последние 30 дней', ha='center', va='center', fontsize=12)
-        axes[0, 1].set_title('📅 Активность по дням', fontsize=14, pad=20)
-        axes[0, 1].axis('off')
+        ax2.text(0.5, 0.5, 'Нет данных за 30 дней', ha='center', va='center', 
+                fontsize=14, transform=ax2.transAxes)
+        ax2.set_title('2. Активность по дням (30 дней)', fontsize=14, pad=20, fontweight='bold')
+        ax2.axis('off')
     
-    # 3. Общая статистика (текст)
+    # ========== 3. ОБЩАЯ СТАТИСТИКА ==========
     ax3 = axes[1, 0]
     ax3.axis('off')
+    ax3.set_facecolor('white')
     
-    # Безопасное получение минимальной и максимальной дат
+    # Безопасное получение дат
+    first_note = 'Н/Д'
+    last_note = 'Н/Д'
+    most_active = 'Н/Д'
+    avg_per_day = 0
+    
     if notes_by_date and len(notes_by_date) > 0:
         try:
-            first_note = min(notes_by_date.keys()) if notes_by_date else 'Н/Д'
-            last_note = max(notes_by_date.keys()) if notes_by_date else 'Н/Д'
+            dates_list = list(notes_by_date.keys())
+            first_note = dates_list[0] if dates_list else 'Н/Д'
+            last_note = dates_list[-1] if dates_list else 'Н/Д'
             most_active = max(notes_by_date, key=notes_by_date.get) if notes_by_date else 'Н/Д'
             avg_per_day = notes_count / 30 if notes_count > 0 else 0
         except:
-            first_note = 'Н/Д'
-            last_note = 'Н/Д'
-            most_active = 'Н/Д'
-            avg_per_day = 0
-    else:
-        first_note = 'Н/Д'
-        last_note = 'Н/Д'
-        most_active = 'Н/Д'
-        avg_per_day = 0
+            pass
     
     stats_text = (
-        f"📊 ОБЩАЯ СТАТИСТИКА\n\n"
-        f"📂 Категорий: {categories_count}\n"
-        f"📝 Всего заметок: {notes_count}\n"
-        f"📅 Первая заметка: {first_note}\n"
+        f"📊 ОБЩАЯ СТАТИСТИКА\n"
+        f"{'='*25}\n\n"
+        f"📂 Категорий:        {categories_count}\n"
+        f"📝 Всего заметок:    {notes_count}\n"
+        f"📅 Первая заметка:   {first_note}\n"
         f"📅 Последняя заметка: {last_note}\n"
-        f"🔥 Самый активный день: {most_active}\n"
-        f"📈 Среднее в день: {avg_per_day:.1f} заметок"
+        f"🔥 Самый активный:   {most_active}\n"
+        f"📈 Среднее в день:   {avg_per_day:.1f}"
     )
     
-    ax3.text(0.1, 0.9, stats_text, fontsize=12, verticalalignment='top',
-            bbox=dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.8, edgecolor='#DEE2E6'))
+    ax3.text(0.1, 0.95, stats_text, fontsize=12, verticalalignment='top',
+            transform=ax3.transAxes,
+            bbox=dict(boxstyle='round,pad=0.7', facecolor='#F8F9FA', 
+                     alpha=0.9, edgecolor='#DEE2E6', linewidth=2))
     
-    # 4. Инфографика с эмодзи
+    # ========== 4. ПРОГРЕСС И ДОСТИЖЕНИЯ ==========
     ax4 = axes[1, 1]
     ax4.axis('off')
+    ax4.set_facecolor('white')
     
     if categories_count > 0:
-        emoji_stats = (
-            f"🎯 ЦЕЛИ И ДОСТИЖЕНИЯ\n\n"
-            f"{'📚' * min(categories_count, 10)} {categories_count} категорий\n"
-            f"{'📝' * min(notes_count//5, 20)} {notes_count} заметок\n"
-            f"{'⭐' * min(notes_count//10, 5)} Уровень чтения\n\n"
+        # Визуализация прогресса текстовыми символами (работает везде!)
+        cat_filled = min(categories_count, 10)
+        cat_empty = 10 - cat_filled
+        cat_bar = '█' * cat_filled + '░' * cat_empty
+        
+        notes_filled = min(notes_count // 5, 20)
+        notes_empty = 20 - notes_filled
+        notes_bar = '█' * notes_filled + '░' * notes_empty
+        
+        # Определение уровня
+        if notes_count >= 100:
+            level = "МУДРЕЦ"
+            level_icon = "👑"
+        elif notes_count >= 50:
+            level = "ЗАЯДЛЫЙ ЧИТАТЕЛЬ"
+            level_icon = "🏆"
+        elif notes_count >= 20:
+            level = "АКТИВНЫЙ ЧИТАТЕЛЬ"
+            level_icon = "👍"
+        elif notes_count >= 10:
+            level = "НАЧИНАЮЩИЙ"
+            level_icon = "🌱"
+        else:
+            level = "СТАРТ"
+            level_icon = "🚀"
+        
+        progress_text = (
+            f"🎯 ПРОГРЕСС И ДОСТИЖЕНИЯ\n"
+            f"{'='*25}\n\n"
+            f"📚 Категории:\n{cat_bar} {categories_count}/10\n\n"
+            f"📝 Заметки:\n{notes_bar} {notes_count}/100\n\n"
+            f"{level_icon} Уровень: {level}\n\n"
         )
         
+        # Мотивационное сообщение
         if notes_count >= 50:
-            emoji_stats += "🏆 Вы - заядлый читатель!"
+            progress_text += "✨ Потрясающий результат!"
         elif notes_count >= 20:
-            emoji_stats += "👍 Хороший прогресс!"
+            progress_text += "💪 Отличный прогресс!"
+        elif notes_count >= 10:
+            progress_text += "🌟 Так держать!"
         else:
-            emoji_stats += "🚀 Начинаем путешествие!"
+            progress_text += "📖 Продолжайте читать!"
         
-        ax4.text(0.1, 0.5, emoji_stats, fontsize=12, verticalalignment='center',
-                bbox=dict(boxstyle='round', facecolor='#E3F2FD', alpha=0.8, edgecolor='#90CAF9'))
+        ax4.text(0.1, 0.95, progress_text, fontsize=12, verticalalignment='top',
+                transform=ax4.transAxes,
+                bbox=dict(boxstyle='round,pad=0.7', facecolor='#E3F2FD', 
+                         alpha=0.9, edgecolor='#90CAF9', linewidth=2))
     else:
-        ax4.text(0.1, 0.5, "🎯 Начните создавать категории и заметки!\n\nПопробуйте кнопку '➕ Новая категория'", 
-                fontsize=12, verticalalignment='center',
-                bbox=dict(boxstyle='round', facecolor='#E3F2FD', alpha=0.8, edgecolor='#90CAF9'))
+        ax4.text(0.1, 0.5, "🎯 Начните создавать категории!\n\n👉 Нажмите '➕ Новая категория'", 
+                fontsize=14, verticalalignment='center',
+                transform=ax4.transAxes,
+                bbox=dict(boxstyle='round,pad=0.7', facecolor='#E3F2FD', 
+                         alpha=0.9, edgecolor='#90CAF9', linewidth=2))
     
+    # Настройка отступов
     plt.tight_layout()
     
-    # Сохраняем график в буфер
+    # Сохраняем в буфер с высоким качеством
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+    plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', 
+                facecolor=fig.get_facecolor(), edgecolor='none')
     buf.seek(0)
     plt.close(fig)
     
