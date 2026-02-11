@@ -1845,12 +1845,12 @@ async def cancel_delete_category(query: CallbackQuery, state: FSMContext):
     await query.answer()
 
 # ===========================================
-# СТАТИСТИКА (ФИНАЛЬНАЯ ВЕРСИЯ)
+# СТАТИСТИКА (ФИНАЛЬНАЯ КРАСИВАЯ ВЕРСИЯ)
 # ===========================================
 @dp.message(Command("stats"))
 @dp.message(F.text == "📊 Статистика")
 async def show_statistics(message: Message):
-    """Показать статистику чтения (текст + прогресс-бары)"""
+    """Показать статистику чтения (красивая версия)"""
     user_id = message.from_user.id
     
     msg = await message.answer("📊 Загружаю статистику...")
@@ -1858,13 +1858,11 @@ async def show_statistics(message: Message):
     async with AsyncSessionLocal() as session:
         try:
             # === ОСНОВНЫЕ ПОКАЗАТЕЛИ ===
-            # Категории
             cat_result = await session.execute(
                 select(func.count(Category.id)).where(Category.user_id == user_id)
             )
             categories_count = cat_result.scalar() or 0
             
-            # Заметки
             notes_result = await session.execute(
                 select(func.count(Note.id)).where(
                     Note.user_id == user_id, 
@@ -1873,7 +1871,6 @@ async def show_statistics(message: Message):
             )
             notes_count = notes_result.scalar() or 0
             
-            # Сессии чтения
             sessions_result = await session.execute(
                 select(ReadingSession).where(ReadingSession.user_id == user_id)
             )
@@ -1886,7 +1883,7 @@ async def show_statistics(message: Message):
             for s in completed_sessions:
                 total_time += s.duration_seconds
             
-            avg_time = total_time / sessions_count if sessions_count > 0 else 0
+            avg_session_time = total_time / sessions_count if sessions_count > 0 else 0
             
             # === ЗАМЕТКИ ПО КАТЕГОРИЯМ ===
             cat_stats = await session.execute(
@@ -1901,7 +1898,62 @@ async def show_statistics(message: Message):
             )
             notes_by_category = dict(cat_stats.all())
             
-            # === СТРЕЙК (ДНИ ПОДРЯД) ===
+            # === СТАТИСТИКА ПО ДНЯМ (30 ДНЕЙ) ===
+            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+            
+            daily_notes = await session.execute(
+                select(func.date(Note.created_at), func.count(Note.id))
+                .where(
+                    Note.user_id == user_id,
+                    Note.created_at >= thirty_days_ago,
+                    Note.is_deleted == False
+                )
+                .group_by(func.date(Note.created_at))
+                .order_by(func.date(Note.created_at))
+            )
+            
+            notes_by_date = {}
+            total_days_with_notes = 0
+            max_notes_in_day = 0
+            most_active_day = "Н/Д"
+            
+            for date_str, count in daily_notes.all():
+                if date_str:
+                    try:
+                        date_obj = datetime.strptime(str(date_str), '%Y-%m-%d')
+                        formatted_date = date_obj.strftime('%d.%m')
+                        notes_by_date[formatted_date] = count
+                        total_days_with_notes += 1
+                        
+                        if count > max_notes_in_day:
+                            max_notes_in_day = count
+                            most_active_day = formatted_date
+                    except:
+                        continue
+            
+            # === ВРЕМЯ ПО ДНЯМ ===
+            daily_time = await session.execute(
+                select(func.date(ReadingSession.start_time), func.sum(ReadingSession.duration_seconds))
+                .where(
+                    ReadingSession.user_id == user_id,
+                    ReadingSession.start_time >= thirty_days_ago,
+                    ReadingSession.is_completed == True
+                )
+                .group_by(func.date(ReadingSession.start_time))
+            )
+            
+            total_reading_days = 0
+            for date_str, seconds in daily_time.all():
+                if date_str and seconds:
+                    total_reading_days += 1
+            
+            # === СРЕДНИЕ ПОКАЗАТЕЛИ ===
+            avg_notes_per_day = notes_count / 30 if notes_count > 0 else 0
+            avg_notes_per_active_day = notes_count / total_days_with_notes if total_days_with_notes > 0 else 0
+            avg_time_per_day = total_time / 30 if total_time > 0 else 0
+            avg_time_per_reading_day = total_time / total_reading_days if total_reading_days > 0 else 0
+            
+            # === СТРЕЙК ===
             today = datetime.utcnow().date()
             streak = 0
             check_date = today
@@ -1966,13 +2018,12 @@ async def show_statistics(message: Message):
         fire_text = f"{streak} дней"
         fire_bar = "🔥" * 7 + f" +{streak-7}" if streak > 7 else "🔥" * 7
     
-    # --- УРОВНИ (50 УРОВНЕЙ) ---
+    # --- УРОВНИ ---
     level = min(50, notes_count // 5 + 1)
     exp_current = notes_count % 5
     exp_total = notes_count
     exp_for_next = 5 - exp_current
     
-    # Названия уровней
     if level <= 5:
         level_title = "🌱 НОВИЧОК"
     elif level <= 10:
@@ -1994,23 +2045,18 @@ async def show_statistics(message: Message):
     else:
         level_title = "✨ ЛЕГЕНДА"
     
-    # Прогресс-бар уровня
     level_bar = '█' * exp_current + '░' * (5 - exp_current)
     
     # --- ДОСТИЖЕНИЯ ---
     achievements = []
     
-    # Категории
     if categories_count >= 1:
         achievements.append("📁 Первая категория")
     if categories_count >= 3:
         achievements.append("📚 Три книги")
     if categories_count >= 5:
         achievements.append("🏛️ Библиотека")
-    if categories_count >= 10:
-        achievements.append("🎓 Книжный клуб")
     
-    # Заметки
     if notes_count >= 1:
         achievements.append("📝 Первая заметка")
     if notes_count >= 10:
@@ -2021,12 +2067,7 @@ async def show_statistics(message: Message):
         achievements.append("📚 50 заметок")
     if notes_count >= 100:
         achievements.append("📖 100 заметок")
-    if notes_count >= 250:
-        achievements.append("📕 250 заметок")
-    if notes_count >= 500:
-        achievements.append("📘 500 заметок")
     
-    # Время
     hours = total_time / 3600
     if hours >= 1:
         achievements.append("⏱️ 1 час чтения")
@@ -2036,24 +2077,15 @@ async def show_statistics(message: Message):
         achievements.append("⌛ 10 часов чтения")
     if hours >= 25:
         achievements.append("⏳ 25 часов чтения")
-    if hours >= 50:
-        achievements.append("⌚ 50 часов чтения")
     
-    # Серии
     if streak >= 3:
         achievements.append("🔥 3 дня подряд")
     if streak >= 7:
         achievements.append("🔥🔥 Неделя")
     if streak >= 14:
         achievements.append("⚡ 2 недели")
-    if streak >= 30:
-        achievements.append("🌋 Месяц")
-    if streak >= 100:
-        achievements.append("👑 100 дней")
     
-    # --- ЦЕЛИ И ПРОГРЕСС ---
-    
-    # Цель по заметкам
+    # --- ЦЕЛИ ---
     if notes_count < 10:
         next_goal = "📄 10 заметок"
         next_goal_current = notes_count
@@ -2070,20 +2102,14 @@ async def show_statistics(message: Message):
         next_goal = "📖 100 заметок"
         next_goal_current = notes_count
         next_goal_target = 100
-    elif notes_count < 250:
+    else:
         next_goal = "📕 250 заметок"
         next_goal_current = notes_count
         next_goal_target = 250
-    else:
-        next_goal = "✨ 500 заметок"
-        next_goal_current = notes_count
-        next_goal_target = 500
     
     goal_progress = (next_goal_current / next_goal_target * 100)
-    goal_bar_length = int(goal_progress / 5)
-    goal_bar = '█' * goal_bar_length + '░' * (20 - goal_bar_length)
+    goal_bar = '█' * int(goal_progress / 5) + '░' * (20 - int(goal_progress / 5))
     
-    # Цель по времени
     if hours < 1:
         time_goal = "⏱️ 1 час чтения"
         time_current = hours
@@ -2096,20 +2122,14 @@ async def show_statistics(message: Message):
         time_goal = "⌛ 10 часов чтения"
         time_current = hours
         time_target = 10
-    elif hours < 25:
+    else:
         time_goal = "⏳ 25 часов чтения"
         time_current = hours
         time_target = 25
-    else:
-        time_goal = "⌚ 50 часов чтения"
-        time_current = hours
-        time_target = 50
     
     time_progress = (time_current / time_target * 100)
-    time_bar_length = int(time_progress / 5)
-    time_bar = '█' * time_bar_length + '░' * (20 - time_bar_length)
+    time_bar = '█' * int(time_progress / 5) + '░' * (20 - int(time_progress / 5))
     
-    # Цель по серии
     if streak < 3:
         streak_goal = "🔥 3 дня подряд"
         streak_current = streak
@@ -2118,77 +2138,103 @@ async def show_statistics(message: Message):
         streak_goal = "🔥🔥 Неделя"
         streak_current = streak
         streak_target = 7
-    elif streak < 14:
+    else:
         streak_goal = "⚡ 2 недели"
         streak_current = streak
         streak_target = 14
-    else:
-        streak_goal = "🌋 Месяц"
-        streak_current = streak
-        streak_target = 30
     
     streak_progress = (streak_current / streak_target * 100) if streak_target > 0 else 0
-    streak_bar_length = int(streak_progress / 5)
-    streak_bar = '█' * streak_bar_length + '░' * (20 - streak_bar_length)
+    streak_bar = '█' * int(streak_progress / 5) + '░' * (20 - int(streak_progress / 5))
     
-    # --- ФОРМИРУЕМ ТЕКСТ ---
-    text = f"📊 <b>СТАТИСТИКА ЧТЕНИЯ</b>\n"
-    text += f"{'═' * 35}\n\n"
+    # ========== КРАСИВОЕ ФОРМАТИРОВАНИЕ ==========
     
-    # Серия и уровень
-    text += f"<b>{fire_bar}</b>  {fire_text}\n"
-    text += f"<b>{level_title}</b> • Уровень <b>{level}</b>\n"
-    text += f"<code>{level_bar}</code>  {exp_current}/5 XP\n"
-    text += f"✨ Всего опыта: <b>{exp_total} XP</b>\n\n"
+    # Верхний блок с серией и уровнем
+    text = f"╔══════════════════════════════════╗\n"
+    text += f"║     📊  СТАТИСТИКА ЧТЕНИЯ  📊    ║\n"
+    text += f"╚══════════════════════════════════╝\n\n"
+    
+    # Серия и уровень в одной рамке
+    text += f"┌──────────────────────────────────┐\n"
+    text += f"│ {fire_bar:<18} {fire_text:>12} │\n"
+    text += f"│ {level_title:<18} • Уровень {level:<3}      │\n"
+    text += f"│ <code>{level_bar}</code>          {exp_current}/5 XP │\n"
+    text += f"│ ✨ Всего опыта: {exp_total:<4} XP               │\n"
+    text += f"└──────────────────────────────────┘\n\n"
     
     # Основные показатели
-    text += f"📂 <b>Категории:</b>  {categories_count}\n"
-    text += f"📝 <b>Заметки:</b>    {notes_count}\n"
-    text += f"⏱️ <b>Сессии:</b>     {sessions_count}\n"
-    text += f"🕐 <b>Время:</b>      {format_time_short(int(total_time))} ({hours:.1f}ч)\n"
+    text += f"┌───────── ОСНОВНЫЕ ПОКАЗАТЕЛИ ─────────┐\n"
+    text += f"│  📂 Категории:      {categories_count:<4}                          │\n"
+    text += f"│  📝 Заметки:        {notes_count:<4}                          │\n"
+    text += f"│  ⏱️  Сессии:        {sessions_count:<4}                          │\n"
+    text += f"│  🕐  Время чтения:  {format_time_short(int(total_time))} ({hours:.1f}ч)           │\n"
+    text += f"│  📊  Среднее за сессию: {format_time_short(int(avg_session_time))}               │\n"
+    text += f"└──────────────────────────────────────┘\n\n"
     
-    if sessions_count > 0:
-        text += f"📊 <b>Среднее:</b>    {format_time_short(int(avg_time))}\n"
-    text += "\n"
+    # Новая секция: СРЕДНИЕ ПОКАЗАТЕЛИ
+    text += f"┌────────── СРЕДНИЕ ПОКАЗАТЕЛИ ──────────┐\n"
+    text += f"│  📈 Заметок в день:       {avg_notes_per_day:.1f}                      │\n"
+    text += f"│  📊 Заметок в активный день: {avg_notes_per_active_day:.1f}               │\n"
+    text += f"│  ⏱️  Времени в день:      {format_time_short(int(avg_time_per_day))}                   │\n"
+    text += f"│  🎯 Времени в день чтения: {format_time_short(int(avg_time_per_reading_day))}               │\n"
+    text += f"└──────────────────────────────────────┘\n\n"
+    
+    # Самый активный день
+    if most_active_day != "Н/Д":
+        text += f"┌──────── САМЫЙ АКТИВНЫЙ ДЕНЬ ────────┐\n"
+        text += f"│  🔥 {most_active_day} — {max_notes_in_day} заметок                       │\n"
+        text += f"└────────────────────────────────────┘\n\n"
     
     # Топ категории
     if notes_by_category:
-        text += f"📚 <b>ТОП КАТЕГОРИЙ:</b>\n"
+        text += f"┌────────── ТОП КАТЕГОРИЙ ──────────┐\n"
         for i, (cat, cnt) in enumerate(list(notes_by_category.items())[:3], 1):
             percent = (cnt / notes_count * 100) if notes_count > 0 else 0
             bar_len = int(percent / 5)
             cat_bar = '█' * bar_len + '░' * (20 - bar_len)
             
-            # Обрезаем длинные названия
-            if len(cat) > 25:
-                cat = cat[:22] + "..."
+            if len(cat) > 20:
+                cat = cat[:18] + "..."
+            
+            if i == 1:
+                medal = "🥇"
+            elif i == 2:
+                medal = "🥈"
+            else:
+                medal = "🥉"
                 
-            text += f"{i}. <b>{cat}</b>\n"
-            text += f"   <code>{cat_bar}</code> {cnt} ({percent:.0f}%)\n"
-        text += "\n"
+            text += f"│ {medal} {cat:<20} {cnt:>2} ({percent:>3.0f}%) │\n"
+            text += f"│    <code>{cat_bar}</code> │\n"
+        text += f"└────────────────────────────────────┘\n\n"
     
-    # Прогресс-бары целей
-    text += f"🎯 <b>АКТИВНЫЕ ЦЕЛИ:</b>\n"
-    text += f"\n"
-    text += f"📋 <b>{next_goal}</b>\n"
-    text += f"<code>{goal_bar}</code> {next_goal_current}/{next_goal_target} ({goal_progress:.0f}%)\n"
-    text += f"\n"
-    text += f"⏱️ <b>{time_goal}</b>\n"
-    text += f"<code>{time_bar}</code> {time_current:.1f}/{time_target}ч ({time_progress:.0f}%)\n"
-    text += f"\n"
-    text += f"🔥 <b>{streak_goal}</b>\n"
-    text += f"<code>{streak_bar}</code> {streak_current}/{streak_target} ({streak_progress:.0f}%)\n"
-    text += f"\n"
+    # Активные цели
+    text += f"┌─────────── АКТИВНЫЕ ЦЕЛИ ───────────┐\n"
+    text += f"│  📋 {next_goal:<25} │\n"
+    text += f"│  <code>{goal_bar}</code> {next_goal_current:>2}/{next_goal_target:<2} ({goal_progress:>3.0f}%) │\n"
+    text += f"│                                      │\n"
+    text += f"│  {time_goal:<31} │\n"
+    text += f"│  <code>{time_bar}</code> {time_current:>3.1f}/{time_target:<2}ч ({time_progress:>3.0f}%) │\n"
+    text += f"│                                      │\n"
+    text += f"│  {streak_goal:<31} │\n"
+    text += f"│  <code>{streak_bar}</code> {streak_current:>2}/{streak_target:<2} ({streak_progress:>3.0f}%) │\n"
+    text += f"└────────────────────────────────────┘\n\n"
     
     # Достижения
     if achievements:
-        text += f"🏆 <b>ДОСТИЖЕНИЯ ({len(achievements)}):</b>\n"
-        # Показываем последние 6 достижений
-        for ach in achievements[-6:]:
-            text += f"  {ach}\n"
-        text += f"\n"
+        text += f"┌─────────── ДОСТИЖЕНИЯ ({len(achievements)}) ───────────┐\n"
+        
+        # Разбиваем достижения на колонки для красоты
+        ach_col1 = achievements[-6:-3] if len(achievements) > 3 else achievements[-3:]
+        ach_col2 = achievements[-3:] if len(achievements) > 3 else []
+        
+        max_len = max(len(ach) for ach in achievements) if achievements else 0
+        
+        for i in range(max(len(ach_col1), len(ach_col2))):
+            ach1 = ach_col1[i] if i < len(ach_col1) else ""
+            ach2 = ach_col2[i] if i < len(ach_col2) else ""
+            text += f"│  {ach1:<20} {ach2:<20} │\n"
+        text += f"└────────────────────────────────────┘\n\n"
     
-    # Совет дня
+    # Совет дня в красивой рамке
     import random
     
     if streak == 0:
@@ -2197,14 +2243,10 @@ async def show_statistics(message: Message):
         tip = "🔥 Завтра будет НЕДЕЛЯ! Продолжайте в том же духе!"
     elif streak == 13:
         tip = "⚡ Завтра 2 НЕДЕЛИ! Вы делаете потрясающий прогресс!"
-    elif streak == 29:
-        tip = "🌋 Завтра будет МЕСЯЦ! Вы настоящий книголюб!"
     elif notes_count < 10:
         tip = f"📝 Осталось всего {10-notes_count} заметок до достижения «10 заметок»!"
     elif hours < 1:
         tip = f"⏱️ Ещё {60-int(total_time/60)} минут до 1 часа чтения!"
-    elif not notes_by_category:
-        tip = "📚 Создайте первую категорию, чтобы упорядочить заметки!"
     else:
         tips = [
             "📚 Читайте каждый день хотя бы 20 минут — это формирует привычку",
@@ -2213,16 +2255,19 @@ async def show_statistics(message: Message):
             "📸 Фотографируйте интересные страницы — это удобно",
             f"🔥 {streak} дней подряд! Отличный результат!",
             "📊 Проверяйте статистику каждую неделю",
-            "💭 Делайте заметки сразу после чтения",
-            "🎯 Следующая цель — 100 заметок!",
-            "📚 Чем больше категорий, тем лучше организация"
+            "💭 Делайте заметки сразу после чтения"
         ]
         tip = random.choice(tips)
     
-    text += f"💡 <b>СОВЕТ ДНЯ:</b>\n{tip}"
+    text += f"┌───────────── СОВЕТ ДНЯ ─────────────┐\n"
+    text += f"│  💡 {tip:<35} │\n"
+    text += f"└────────────────────────────────────┘"
     
-    await message.answer(text, parse_mode='HTML')# ===========================================
-# О НАС
+    await message.answer(text, parse_mode='HTML')
+    
+    
+    
+    # О НАС
 # ===========================================
 @dp.message(Command("about"))
 @dp.message(F.text == "ℹ️ О нас")
