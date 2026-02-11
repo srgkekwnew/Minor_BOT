@@ -221,7 +221,7 @@ def create_reading_stats_chart(user_id: int, categories_count: int, notes_count:
             pass
     
     stats_text = (
-        f"📊 ОБЩАЯ СТАТИСТИКА\n"
+        f"📊 ОБЩАЯ СТАТИСТИКА (ЛОЛ)\n"
         f"{'='*25}\n\n"
         f"📂 Категорий:        {categories_count}\n"
         f"📝 Всего заметок:    {notes_count}\n"
