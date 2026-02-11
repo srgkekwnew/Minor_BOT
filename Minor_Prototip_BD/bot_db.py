@@ -242,12 +242,102 @@ def create_reading_stats_chart(notes_by_category: dict, notes_by_date: dict, tim
 
 
 # ===========================================
-# СТАТИСТИКА (3 ГРАФИКА + ПОЛНЫЙ ТЕКСТ)
+# ФУНКЦИЯ СОЗДАНИЯ ГРАФИКОВ (2 ГРАФИКА)
+# ===========================================
+def create_reading_stats_chart(notes_by_date: dict, time_by_date: dict):
+    """Создать 2 графика: 
+       1. Столбчатая - заметки по дням
+       2. Столбчатая - время чтения по дням
+    """
+    
+    # Создаем фигуру с 2 подграфиками
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5), facecolor='white')
+    fig.suptitle('Активность чтения за 30 дней', fontsize=16, fontweight='bold', y=1.02)
+    
+    colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']
+    
+    # === ГРАФИК 1: СТОЛБЧАТАЯ ДИАГРАММА (ЗАМЕТКИ ПО ДНЯМ) ===
+    ax1.set_facecolor('white')
+    
+    if notes_by_date and len(notes_by_date) > 0:
+        # Берем последние 10 дней
+        dates = sorted(notes_by_date.keys())[-10:]
+        date_labels = [d[-5:] if len(d) > 5 else d for d in dates]
+        note_counts = [notes_by_date.get(d, 0) for d in dates]
+        
+        x = range(len(dates))
+        
+        bars = ax1.bar(x, note_counts, color=colors[0], edgecolor='white', linewidth=2, width=0.7)
+        
+        # Добавляем значения
+        for bar, count in zip(bars, note_counts):
+            height = bar.get_height()
+            if height > 0:
+                ax1.text(bar.get_x() + bar.get_width()/2, height + 0.1,
+                        f'{int(height)}', ha='center', va='bottom', fontweight='bold', fontsize=10)
+        
+        ax1.set_title('Заметки по дням', fontsize=14, pad=15, fontweight='bold')
+        ax1.set_xlabel('Дата', fontsize=11)
+        ax1.set_ylabel('Количество заметок', fontsize=11)
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(date_labels, rotation=45, ha='right')
+        ax1.grid(True, alpha=0.3, axis='y', linestyle='--')
+    else:
+        ax1.text(0.5, 0.5, 'Нет данных за 30 дней', ha='center', va='center', 
+                fontsize=12, transform=ax1.transAxes)
+        ax1.set_title('Заметки по дням', fontsize=14, pad=15, fontweight='bold')
+        ax1.axis('off')
+    
+    # === ГРАФИК 2: СТОЛБЧАТАЯ ДИАГРАММА (ВРЕМЯ ПО ДНЯМ) ===
+    ax2.set_facecolor('white')
+    
+    if time_by_date and len(time_by_date) > 0:
+        # Берем последние 10 дней
+        dates = sorted(time_by_date.keys())[-10:]
+        date_labels = [d[-5:] if len(d) > 5 else d for d in dates]
+        time_minutes = [time_by_date.get(d, 0) / 60 for d in dates]  # в минутах
+        
+        x = range(len(dates))
+        
+        bars = ax2.bar(x, time_minutes, color=colors[1], edgecolor='white', linewidth=2, width=0.7)
+        
+        # Добавляем значения
+        for bar, minutes in zip(bars, time_minutes):
+            height = bar.get_height()
+            if height > 0:
+                ax2.text(bar.get_x() + bar.get_width()/2, height + 0.5,
+                        f'{int(minutes)}м', ha='center', va='bottom', fontweight='bold', fontsize=10)
+        
+        ax2.set_title('Время чтения по дням', fontsize=14, pad=15, fontweight='bold')
+        ax2.set_xlabel('Дата', fontsize=11)
+        ax2.set_ylabel('Минуты', fontsize=11)
+        ax2.set_xticks(x)
+        ax2.set_xticklabels(date_labels, rotation=45, ha='right')
+        ax2.grid(True, alpha=0.3, axis='y', linestyle='--')
+    else:
+        ax2.text(0.5, 0.5, 'Нет данных о времени', ha='center', va='center', 
+                fontsize=12, transform=ax2.transAxes)
+        ax2.set_title('Время чтения по дням', fontsize=14, pad=15, fontweight='bold')
+        ax2.axis('off')
+    
+    plt.tight_layout()
+    
+    # Сохраняем
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', facecolor='white')
+    buf.seek(0)
+    plt.close(fig)
+    
+    return buf
+
+
+# ===========================================
+# СТАТИСТИКА (2 ГРАФИКА + ПОЛНЫЙ ТЕКСТ)
 # ===========================================
 @dp.message(Command("stats"))
 @dp.message(F.text == "📊 Статистика")
 async def show_statistics(message: Message):
-    """Показать статистику чтения (3 графика + полная текстовая статистика)"""
+    """Показать статистику чтения (2 графика + полная текстовая статистика)"""
     user_id = message.from_user.id
     
     loading_msg = await message.answer("📊 Собираю статистику...")
@@ -407,11 +497,11 @@ async def show_statistics(message: Message):
     
     # === ОТПРАВКА ГРАФИКОВ ===
     try:
-        chart_buf = create_reading_stats_chart(notes_by_category, notes_by_date, time_by_date)
+        chart_buf = create_reading_stats_chart(notes_by_date, time_by_date)
         await loading_msg.delete()
         await message.answer_photo(
             BufferedInputFile(chart_buf.getvalue(), filename="stats.png"),
-            caption="📈 Статистика чтения (графики)"
+            caption="📈 Активность чтения за 30 дней"
         )
     except Exception as e:
         print(f"Ошибка создания графиков: {e}")
@@ -561,33 +651,33 @@ async def show_statistics(message: Message):
     
     # --- ФОРМИРУЕМ ТЕКСТ ---
     text = f"📊 <b>СТАТИСТИКА ЧТЕНИЯ</b>\n"
-    text += f"{'═' * 35}\n\n"
+    text += f"{'─' * 40}\n\n"
     
     # Серия и уровень
-    text += f"{fire} <b>Серия:</b> {streak_text}\n"
-    text += f"{level_title} • <b>Уровень {level}</b>\n"
-    text += f"<code>{level_bar}</code> {exp_current}/5 XP\n"
+    text += f"{fire}  <b>{streak_text}</b>\n"
+    text += f"{level_title}  •  <b>Уровень {level}</b>\n"
+    text += f"<code>{level_bar}</code>  {exp_current}/5 XP\n"
     text += f"✨ <b>Всего опыта:</b> {notes_count} XP\n\n"
     
     # Основные показатели
-    text += f"📂 <b>Категории:</b> {categories_count}\n"
-    text += f"📝 <b>Заметки:</b> {notes_count}\n"
-    text += f"⏱️ <b>Сессии:</b> {sessions_count}\n"
-    text += f"🕐 <b>Время:</b> {format_time_short(int(total_time))} ({hours:.1f}ч)\n"
+    text += f"📂 <b>Категории:</b>     {categories_count}\n"
+    text += f"📝 <b>Заметки:</b>       {notes_count}\n"
+    text += f"⏱️ <b>Сессии:</b>        {sessions_count}\n"
+    text += f"🕐 <b>Время чтения:</b>  {format_time_short(int(total_time))} ({hours:.1f}ч)\n"
     text += f"📊 <b>Среднее/сессия:</b> {format_time_short(int(avg_session_time))}\n\n"
     
     # Средние показатели
     text += f"📈 <b>СРЕДНИЕ ПОКАЗАТЕЛИ (30 дней):</b>\n"
-    text += f"  • Заметок в день: {avg_notes_per_day:.1f}\n"
+    text += f"  • Заметок в день:         {avg_notes_per_day:.1f}\n"
     text += f"  • Заметок в активный день: {avg_notes_per_active_day:.1f}\n"
-    text += f"  • Времени в день: {format_time_short(int(avg_time_per_day))}\n"
-    text += f"  • Времени в день чтения: {format_time_short(int(avg_time_per_reading_day))}\n\n"
+    text += f"  • Времени в день:         {format_time_short(int(avg_time_per_day))}\n"
+    text += f"  • Времени в день чтения:  {format_time_short(int(avg_time_per_reading_day))}\n\n"
     
     # Самые активные дни
     if most_active_day != "—":
-        text += f"🔥 <b>Самый активный день (заметки):</b> {most_active_day} • {max_notes_in_day} заметок\n"
+        text += f"🔥 <b>Самый активный день (заметки):</b> {most_active_day[-5:]} • {max_notes_in_day} заметок\n"
     if most_reading_day != "—":
-        text += f"⏱️ <b>Самый активный день (время):</b> {most_reading_day} • {format_time_short(int(max_time_in_day))}\n\n"
+        text += f"⏱️ <b>Самый активный день (время):</b> {most_reading_day[-5:]} • {format_time_short(int(max_time_in_day))}\n\n"
     
     # Топ категории
     if notes_by_category:
@@ -608,14 +698,14 @@ async def show_statistics(message: Message):
                 medal = "🥉"
             
             text += f"{medal} <b>{cat}</b>\n"
-            text += f"   <code>{cat_bar}</code> {cnt} ({percent:.0f}%)\n"
+            text += f"   <code>{cat_bar}</code>  {cnt} ({percent:.0f}%)\n"
         text += f"\n"
     
     # Последние заметки
     if recent_notes:
         text += f"🕐 <b>ПОСЛЕДНИЕ ЗАМЕТКИ:</b>\n"
         for content, date in recent_notes[:3]:
-            date_str = date.strftime('%d.%m.%Y')
+            date_str = date.strftime('%d.%m')
             short_content = content[:25] + "..." if len(content) > 25 else content
             text += f"  • {date_str}: {short_content}\n"
         text += f"\n"
@@ -640,14 +730,14 @@ async def show_statistics(message: Message):
     if level < 50:
         text += f"🎯 <b>ПРОГРЕСС УРОВНЯ:</b>\n"
         text += f"  {level_title} → {next_level_title}\n"
-        text += f"  <code>{level_progress_bar}</code> {notes_count}/{next_level * 5} XP ({level_progress:.0f}%)\n\n"
+        text += f"  <code>{level_progress_bar}</code>  {notes_count}/{next_level * 5} XP ({level_progress:.0f}%)\n\n"
     else:
         text += f"👑 <b>МАКСИМАЛЬНЫЙ УРОВЕНЬ!</b>\n\n"
     
     # Следующая цель
     text += f"🎯 <b>СЛЕДУЮЩАЯ ЦЕЛЬ:</b>\n"
     text += f"  {next_goal}\n"
-    text += f"  <code>{goal_bar}</code> {next_goal_current}/{next_goal_target} ({goal_progress:.0f}%)\n\n"
+    text += f"  <code>{goal_bar}</code>  {next_goal_current}/{next_goal_target} ({goal_progress:.0f}%)\n\n"
     
     # Совет дня
     import random
@@ -680,7 +770,6 @@ async def show_statistics(message: Message):
     text += f"💡 <b>СОВЕТ ДНЯ:</b>\n{tip}"
     
     await message.answer(text, parse_mode='HTML')        
-        
         
         # ФУНКЦИИ ДЛЯ РАБОТЫ С ЗАМЕТКАМИ
 # ===========================================
