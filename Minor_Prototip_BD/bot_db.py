@@ -32,6 +32,8 @@ from init_db import (
     get_user_reading_stats, update_daily_stats
 )
 
+from aiogram.types import BufferedInputFile
+
 # ===========================================
 # НАСТРОЙКИ
 # ===========================================
@@ -177,6 +179,7 @@ async def show_statistics(message: Message):
     try:
         import matplotlib.pyplot as plt
         import io
+        from aiogram.types import BufferedInputFile
         
         fig, ax = plt.subplots()
         ax.bar(['Тест'], [1])
@@ -231,6 +234,8 @@ async def show_statistics(message: Message):
     
     # === ТЕСТ 4: СОЗДАНИЕ ГРАФИКА С ДАННЫМИ ===
     try:
+        from aiogram.types import BufferedInputFile
+        
         chart_buf = create_reading_stats_chart(notes_by_date, {})
         
         if chart_buf:
@@ -245,7 +250,6 @@ async def show_statistics(message: Message):
         await message.answer(f"❌ Ошибка создания графика с данными: {e}")
     
     await message.answer("🔍 ДИАГНОСТИКА ЗАВЕРШЕНА")    
-    
     
     # ФУНКЦИИ ДЛЯ РАБОТЫ С ЗАМЕТКАМИ
 # ===========================================
