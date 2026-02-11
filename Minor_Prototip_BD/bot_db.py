@@ -1986,32 +1986,31 @@ async def show_statistics(message: Message):
                 else:
                     night += session_obj.duration_seconds
             
-                # === СТРЕЙК-СЕРИЯ (ОГОНЕК ДЛЯ ТЕСТОВОГО ПЕРИОДА) ===
-                today = datetime.utcnow().date()
-                streak = 0
-                check_date = today
+            # === СТРЕЙК-СЕРИЯ (ОГОНЕК) ===
+            today = datetime.utcnow().date()
+            streak = 0
+            check_date = today
 
-                # Считаем дни подряд с сегодняшнего дня вниз
-                while True:
-                    has_activity = await session.execute(
-                        select(Note.id)
-                        .where(
-                            Note.user_id == user_id,
-                            func.date(Note.created_at) == check_date.strftime('%Y-%m-%d'),
-                            Note.is_deleted == False
-                        )
-                        .limit(1)
+            # Считаем дни подряд с сегодняшнего дня вниз
+            while True:
+                has_activity = await session.execute(
+                    select(Note.id)
+                    .where(
+                        Note.user_id == user_id,
+                        func.date(Note.created_at) == check_date.strftime('%Y-%m-%d'),
+                        Note.is_deleted == False
                     )
-    
-                    if has_activity.first():
-                        streak += 1
-                        check_date -= timedelta(days=1)
-                    else:
-                        break
+                    .limit(1)
+                )
+                
+                if has_activity.first():
+                    streak += 1
+                    check_date -= timedelta(days=1)
+                else:
+                    break
 
-                # Максимальный стрейк за всё время (пока просто равен текущему)
-                max_streak = streak
-            # === ЕЖЕНЕДЕЛЬНАЯ СТАТИСТИКА ===
+            max_streak = streak           
+           # === ЕЖЕНЕДЕЛЬНАЯ СТАТИСТИКА ===
             weeks_ago = datetime.utcnow() - timedelta(days=90)
             weekly_stats = await session.execute(
                 select(
@@ -2047,9 +2046,9 @@ async def show_statistics(message: Message):
                 projected_time = total_reading_time
             
         except Exception as e:
-            await loading_msg.edit_text(f"❌ Ошибка: {e}")
-            return
-    
+            print(f"Ошибка графиков: {e}")
+            await loading_msg.delete()
+            await message.answer("📊 Загружаю текстовую статистику...")    
     # === СОЗДАНИЕ ГРАФИКОВ ===
     try:
         fig = plt.figure(figsize=(16, 12), facecolor='white')
@@ -2274,7 +2273,8 @@ async def show_statistics(message: Message):
         
     except Exception as e:
         print(f"Ошибка графиков: {e}")
-        await loading_msg.edit_text("📊 Загружаю текстовую статистику...")
+        await loading_msg.delete()
+        await message.answer("📊 Загружаю текстовую статистику...")
     
     # === ТЕКСТОВАЯ СТАТИСТИКА С ДОСТИЖЕНИЯМИ ===
     
