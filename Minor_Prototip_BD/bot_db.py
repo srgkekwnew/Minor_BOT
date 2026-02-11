@@ -1850,153 +1850,158 @@ async def cancel_delete_category(query: CallbackQuery, state: FSMContext):
 @dp.message(Command("stats"))
 @dp.message(F.text == "📊 Статистика")
 async def show_statistics(message: Message):
-    """Показать статистику чтения"""
+    """Показать текстовую статистику чтения (без графиков)"""
     user_id = message.from_user.id
     
-    loading_msg = await message.answer("📊 Собираю статистику...")
+    msg = await message.answer("📊 Собираю статистику...")
     
     async with AsyncSessionLocal() as session:
         try:
-            # Количество категорий
+            # === КАТЕГОРИИ ===
             cat_result = await session.execute(
                 select(func.count(Category.id)).where(Category.user_id == user_id)
             )
             categories_count = cat_result.scalar() or 0
             
-            # Общее количество заметок
+            # === ЗАМЕТКИ ===
             notes_result = await session.execute(
                 select(func.count(Note.id)).where(Note.user_id == user_id)
             )
             notes_count = notes_result.scalar() or 0
             
-            # Статистика по сессиям чтения
+            # === СЕССИИ ЧТЕНИЯ ===
             sessions_result = await session.execute(
                 select(ReadingSession).where(ReadingSession.user_id == user_id)
             )
             all_sessions = sessions_result.scalars().all()
             
-            # Рассчитываем статистику времени
             total_reading_time = 0
             completed_sessions = [s for s in all_sessions if s.duration_seconds]
             total_sessions = len(completed_sessions)
             
-            for session_obj in completed_sessions:
-                total_reading_time += session_obj.duration_seconds
+            for s in completed_sessions:
+                total_reading_time += s.duration_seconds
             
             avg_session_time = total_reading_time / total_sessions if total_sessions > 0 else 0
             
-            # Статистика по категориям (заметки, а не сессии)
-            category_stats_result = await session.execute(
+            # === ЗАМЕТКИ ПО КАТЕГОРИЯМ ===
+            cat_stats = await session.execute(
                 select(Category.name, func.count(Note.id))
                 .join(Note, Category.id == Note.category_id)
                 .where(Category.user_id == user_id)
                 .group_by(Category.id, Category.name)
                 .order_by(func.count(Note.id).desc())
             )
-            notes_by_category = {name: count for name, count in category_stats_result.all()}
+            notes_by_category = dict(cat_stats.all())
             
-            # Статистика по дням (последние 30 дней)
-            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-            date_stats_result = await session.execute(
-                select(func.date(Note.created_at), func.count(Note.id))
-                .where(
-                    (Note.user_id == user_id) &
-                    (Note.created_at >= thirty_days_ago)
-                )
-                .group_by(func.date(Note.created_at))
-                .order_by(func.date(Note.created_at))
+            # === ПОСЛЕДНИЕ ЗАМЕТКИ ===
+            recent = await session.execute(
+                select(Note.content, Note.created_at)
+                .where(Note.user_id == user_id, Note.is_deleted == False)
+                .order_by(Note.created_at.desc())
+                .limit(3)
             )
+            recent_notes = recent.all()
             
-            notes_by_date = {}
-            for date_str, count in date_stats_result.all():
-                if date_str:
-                    date_obj = datetime.strptime(str(date_str), '%Y-%m-%d')
-                    formatted_date = date_obj.strftime('%d %b')
-                    notes_by_date[formatted_date] = count
-            
-            # Статистика по типам медиа
-            media_stats_result = await session.execute(
-                select(Note.media_type, func.count(Note.id))
-                .where(Note.user_id == user_id)
-                .group_by(Note.media_type)
-                .order_by(func.count(Note.id).desc())
-            )
-            media_stats = dict(media_stats_result.all())
-        
         except Exception as e:
-            await loading_msg.delete()
-            error_text = (
-                f"❌ <b>Ошибка при получении статистики:</b>\n\n"
-                f"<code>{str(e)}</code>"
-            )
-            await message.answer(error_text, parse_mode='HTML')
+            await msg.edit_text(f"❌ Ошибка: {e}")
             return
     
-    try:
-        # Создаем график статистики
-        chart_buffer = create_reading_stats_chart(
-            user_id=user_id,
-            categories_count=categories_count,
-            notes_count=notes_count,
-            notes_by_category=notes_by_category,
-            notes_by_date=notes_by_date
-        )
-        
-        await loading_msg.delete()
-        
-        # Отправляем график
-        await message.answer_photo(
-            photo=types.BufferedInputFile(chart_buffer.getvalue(), filename="reading_stats.png"),
-            caption=f"📊 <b>Ваша статистика чтения</b>\n\n"
-                   f"📂 Категорий: <b>{categories_count}</b>\n"
-                   f"📝 Всего заметок: <b>{notes_count}</b>\n"
-                   f"⏱️ Сессий чтения: <b>{total_sessions}</b>\n"
-                   f"🕐 Всего времени: <b>{format_time_short(int(total_reading_time))}</b>\n"
-                   f"📅 Среднее за сессию: <b>{format_time_short(int(avg_session_time))}</b>\n\n"
-                   f"<i>Продолжайте читать и делать заметки! 📚</i>",
-            parse_mode='HTML'
-        )
-        
-        # Дополнительная статистика
-        if notes_by_category:
-            categories_text = "\n".join([f"  • {name}: {count} заметок" 
-                                       for name, count in list(notes_by_category.items())[:5]])
-            if len(notes_by_category) > 5:
-                categories_text += f"\n  • ... и ещё {len(notes_by_category) - 5} категорий"
-            
-            stats_text = f"📈 <b>Детальная статистика</b>\n\n"
-            
-            stats_text += f"<b>Топ категорий:</b>\n{categories_text}\n\n"
-            
-            # Рекомендации
-            stats_text += "<b>💡 Рекомендации:</b>\n"
-            if categories_count <= 3:
-                stats_text += "📖 Попробуйте создать больше категорий для разных книг\n"
-            if notes_count < 20:
-                stats_text += "✍️ Делайте больше заметок, даже коротких\n"
-            elif notes_count < 50:
-                stats_text += "👍 Хороший прогресс! Продолжайте в том же духе\n"
-            else:
-                stats_text += "🎯 Отличный результат! Вы настоящий книголюб!\n"
-            
-            if total_reading_time < 3600:
-                stats_text += "⏱️ Попробуйте читать с таймером для отслеживания прогресса\n"
-            
-            await message.answer(stats_text, parse_mode='HTML')
-        
-    except Exception as e:
-        await loading_msg.delete()
-        error_text = (
-            f"❌ <b>Ошибка при создании статистики:</b>\n\n"
-            f"<code>{str(e)}</code>\n\n"
-            f"<i>Текстовая статистика:</i>\n\n"
-            f"📂 Категорий: {categories_count}\n"
-            f"📝 Заметок: {notes_count}\n"
-            f"⏱️ Сессий: {total_sessions}\n"
-            f"🕐 Время: {format_time_short(int(total_reading_time))}"
-        )
-        await message.answer(error_text, parse_mode='HTML')
-
+    # === ФОРМИРУЕМ КРАСИВЫЙ ТЕКСТОВЫЙ ОТЧЕТ ===
+    
+    # Шапка
+    text = (
+        f"📊 <b>СТАТИСТИКА ЧТЕНИЯ</b>\n"
+        f"{'▬' * 25}\n\n"
+    )
+    
+    # Основная статистика
+    text += (
+        f"📂 <b>Категории:</b> {categories_count}\n"
+        f"📝 <b>Всего заметок:</b> {notes_count}\n"
+        f"⏱️ <b>Сессий чтения:</b> {total_sessions}\n"
+        f"🕐 <b>Всего времени:</b> {format_time_short(int(total_reading_time))}\n"
+        f"📊 <b>Среднее за сессию:</b> {format_time_short(int(avg_session_time))}\n\n"
+    )
+    
+    # Распределение по категориям
+    if notes_by_category:
+        text += f"📚 <b>КАТЕГОРИИ:</b>\n"
+        for i, (cat_name, cat_count) in enumerate(list(notes_by_category.items())[:5], 1):
+            percent = (cat_count / notes_count * 100) if notes_count > 0 else 0
+            bar_len = int(percent / 5)
+            bar = '█' * bar_len + '░' * (20 - bar_len)
+            text += f"{i}. <b>{cat_name[:20]}</b>\n   {bar} {cat_count} ({percent:.0f}%)\n"
+        text += "\n"
+    
+    # Последние заметки
+    if recent_notes:
+        text += f"🕐 <b>ПОСЛЕДНИЕ ЗАМЕТКИ:</b>\n"
+        for content, date in recent_notes:
+            date_str = date.strftime('%d.%m.%Y')
+            short = content[:30] + '...' if len(content) > 30 else content
+            text += f"• {date_str}: <i>{short}</i>\n"
+        text += "\n"
+    
+    # Достижения
+    text += f"🏆 <b>ДОСТИЖЕНИЯ:</b>\n"
+    
+    if notes_count >= 100:
+        text += f"👑 <b>Магистр чтения:</b> 100+ заметок!\n"
+        level = "МАГИСТР"
+    elif notes_count >= 50:
+        text += f"🏅 <b>Заядлый читатель:</b> 50+ заметок!\n"
+        level = "ПРОФИ"
+    elif notes_count >= 20:
+        text += f"📖 <b>Активный читатель:</b> 20+ заметок!\n"
+        level = "АКТИВИСТ"
+    elif notes_count >= 10:
+        text += f"🌱 <b>Начинающий:</b> 10+ заметок!\n"
+        level = "НОВИЧОК"
+    else:
+        text += f"🚀 <b>Старт:</b> сделайте первые 10 заметок\n"
+        level = "СТАРТ"
+    
+    if total_reading_time >= 36000:
+        text += f"⏳ <b>Книжный червь:</b> 10+ часов чтения!\n"
+    elif total_reading_time >= 3600:
+        text += f"⏱️ <b>В ритме книг:</b> 1+ час чтения\n"
+    
+    text += f"\n🎯 <b>ТЕКУЩИЙ УРОВЕНЬ: {level}</b>\n"
+    
+    # Прогресс до следующего уровня
+    if notes_count < 10:
+        next_level = 10
+        progress = notes_count / 10 * 100
+        bar = '█' * int(progress / 5) + '░' * (20 - int(progress / 5))
+        text += f"До «НОВИЧОК»: {notes_count}/10\n{bar} {progress:.0f}%\n"
+    elif notes_count < 20:
+        progress = (notes_count - 10) / 10 * 100
+        bar = '█' * int(progress / 5) + '░' * (20 - int(progress / 5))
+        text += f"До «АКТИВИСТ»: {notes_count}/20\n{bar} {progress:.0f}%\n"
+    elif notes_count < 50:
+        progress = (notes_count - 20) / 30 * 100
+        bar = '█' * int(progress / 5) + '░' * (20 - int(progress / 5))
+        text += f"До «ПРОФИ»: {notes_count}/50\n{bar} {progress:.0f}%\n"
+    elif notes_count < 100:
+        progress = (notes_count - 50) / 50 * 100
+        bar = '█' * int(progress / 5) + '░' * (20 - int(progress / 5))
+        text += f"До «МАГИСТР»: {notes_count}/100\n{bar} {progress:.0f}%\n"
+    
+    # Совет дня
+    text += f"\n💡 <b>СОВЕТ ДНЯ:</b>\n"
+    if notes_count < 10:
+        text += f"   Делайте хотя бы 1 заметку в день! Привычка = 21 день ✨"
+    elif notes_count < 30:
+        text += f"   Отличный старт! Добавляйте фото к заметкам 📸"
+    elif notes_count < 50:
+        text += f"   Используйте таймер чтения для отслеживания времени ⏱️"
+    elif notes_count < 100:
+        text += f"   Потрясающий прогресс! Делитесь книгами с друзьями 👥"
+    else:
+        text += f"   Вы легенда! Поставьте цель 200 заметок 🎯"
+    
+    await msg.edit_text(text, parse_mode='HTML')
 # ===========================================
 # ТЕКСТОВЫЕ СООБЩЕНИЯ
 # ===========================================
