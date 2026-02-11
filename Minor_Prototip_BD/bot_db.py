@@ -1850,31 +1850,33 @@ async def cancel_delete_category(query: CallbackQuery, state: FSMContext):
 @dp.message(Command("stats"))
 @dp.message(F.text == "📊 Статистика")
 async def show_statistics(message: Message):
-    """Показать текстовую статистику чтения (без графиков)"""
+    """Показать расширенную геймифицированную статистику"""
     user_id = message.from_user.id
     
-    msg = await message.answer("📊 Собираю статистику...")
+    loading_msg = await message.answer("📊 Собираю статистику...")
     
     async with AsyncSessionLocal() as session:
         try:
-            # === КАТЕГОРИИ ===
+            # === БАЗОВАЯ СТАТИСТИКА ===
+            # Категории
             cat_result = await session.execute(
                 select(func.count(Category.id)).where(Category.user_id == user_id)
             )
             categories_count = cat_result.scalar() or 0
             
-            # === ЗАМЕТКИ ===
+            # Заметки
             notes_result = await session.execute(
                 select(func.count(Note.id)).where(Note.user_id == user_id)
             )
             notes_count = notes_result.scalar() or 0
             
-            # === СЕССИИ ЧТЕНИЯ ===
+            # Сессии чтения
             sessions_result = await session.execute(
                 select(ReadingSession).where(ReadingSession.user_id == user_id)
             )
             all_sessions = sessions_result.scalars().all()
             
+            # === РАСЧЕТ ВРЕМЕНИ ===
             total_reading_time = 0
             completed_sessions = [s for s in all_sessions if s.duration_seconds]
             total_sessions = len(completed_sessions)
@@ -1884,7 +1886,53 @@ async def show_statistics(message: Message):
             
             avg_session_time = total_reading_time / total_sessions if total_sessions > 0 else 0
             
-            # === ЗАМЕТКИ ПО КАТЕГОРИЯМ ===
+            # === СТАТИСТИКА ПО ДНЯМ (30 ДНЕЙ) ===
+            thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+            seven_days_ago = datetime.utcnow() - timedelta(days=7)
+            
+            # Заметки по дням
+            daily_notes = await session.execute(
+                select(func.date(Note.created_at), func.count(Note.id))
+                .where(
+                    Note.user_id == user_id,
+                    Note.created_at >= thirty_days_ago,
+                    Note.is_deleted == False
+                )
+                .group_by(func.date(Note.created_at))
+            )
+            notes_by_date = {}
+            for date_str, count in daily_notes.all():
+                if date_str:
+                    date_obj = datetime.strptime(str(date_str), '%Y-%m-%d')
+                    notes_by_date[date_obj.date()] = count
+            
+            # Время по дням
+            daily_time = await session.execute(
+                select(func.date(ReadingSession.start_time), func.sum(ReadingSession.duration_seconds))
+                .where(
+                    ReadingSession.user_id == user_id,
+                    ReadingSession.start_time >= thirty_days_ago,
+                    ReadingSession.is_completed == True
+                )
+                .group_by(func.date(ReadingSession.start_time))
+            )
+            time_by_date = {}
+            for date_str, seconds in daily_time.all():
+                if date_str:
+                    date_obj = datetime.strptime(str(date_str), '%Y-%m-%d')
+                    time_by_date[date_obj.date()] = seconds
+            
+            # === ПОСЛЕДНИЕ 7 ДНЕЙ ===
+            last_7_days_notes = 0
+            last_7_days_time = 0
+            for date, count in notes_by_date.items():
+                if date >= seven_days_ago.date():
+                    last_7_days_notes += count
+            for date, seconds in time_by_date.items():
+                if date >= seven_days_ago.date():
+                    last_7_days_time += seconds
+            
+            # === СТАТИСТИКА ПО КАТЕГОРИЯМ ===
             cat_stats = await session.execute(
                 select(Category.name, func.count(Note.id))
                 .join(Note, Category.id == Note.category_id)
@@ -1894,115 +1942,632 @@ async def show_statistics(message: Message):
             )
             notes_by_category = dict(cat_stats.all())
             
-            # === ПОСЛЕДНИЕ ЗАМЕТКИ ===
-            recent = await session.execute(
-                select(Note.content, Note.created_at)
-                .where(Note.user_id == user_id, Note.is_deleted == False)
-                .order_by(Note.created_at.desc())
-                .limit(3)
+            # Время по категориям
+            time_by_category_result = await session.execute(
+                select(Category.name, func.sum(ReadingSession.duration_seconds))
+                .join(ReadingSession, Category.id == ReadingSession.category_id)
+                .where(
+                    Category.user_id == user_id,
+                    ReadingSession.is_completed == True
+                )
+                .group_by(Category.id, Category.name)
+                .order_by(func.sum(ReadingSession.duration_seconds).desc())
             )
-            recent_notes = recent.all()
+            time_by_category = dict(time_by_category_result.all())
+            
+            # === СТАТИСТИКА ПО МЕДИА ===
+            media_stats = await session.execute(
+                select(Note.media_type, func.count(Note.id))
+                .where(Note.user_id == user_id, Note.is_deleted == False)
+                .group_by(Note.media_type)
+            )
+            media_counts = dict(media_stats.all())
+            
+            text_count = media_counts.get(MediaType.TEXT, 0)
+            photo_count = media_counts.get(MediaType.PHOTO, 0)
+            video_count = media_counts.get(MediaType.VIDEO, 0)
+            voice_count = media_counts.get(MediaType.VOICE, 0)
+            doc_count = media_counts.get(MediaType.DOCUMENT, 0)
+            
+            # === СТАТИСТИКА ПО ВРЕМЕНИ СУТОК ===
+            morning = 0  # 6-12
+            afternoon = 0  # 12-18
+            evening = 0  # 18-24
+            night = 0  # 0-6
+            
+            for session_obj in completed_sessions:
+                hour = session_obj.start_time.hour
+                if 6 <= hour < 12:
+                    morning += session_obj.duration_seconds
+                elif 12 <= hour < 18:
+                    afternoon += session_obj.duration_seconds
+                elif 18 <= hour < 24:
+                    evening += session_obj.duration_seconds
+                else:
+                    night += session_obj.duration_seconds
+            
+            # === СТРЕЙК-СЕРИЯ (ОГОНЕК) ===
+            today = datetime.utcnow().date()
+            streak = 0
+            check_date = today
+            
+            while True:
+                has_activity = await session.execute(
+                    select(Note.id)
+                    .where(
+                        Note.user_id == user_id,
+                        func.date(Note.created_at) == check_date.strftime('%Y-%m-%d'),
+                        Note.is_deleted == False
+                    )
+                    .limit(1)
+                )
+                if has_activity.first():
+                    streak += 1
+                    check_date -= timedelta(days=1)
+                else:
+                    break
+            
+            # Максимальный стрейк
+            max_streak = streak  # В реальности нужно хранить в БД
+            if streak > max_streak:
+                max_streak = streak
+            
+            # === ЕЖЕНЕДЕЛЬНАЯ СТАТИСТИКА ===
+            weeks_ago = datetime.utcnow() - timedelta(days=90)
+            weekly_stats = await session.execute(
+                select(
+                    func.strftime('%Y-%W', Note.created_at).label('week'),
+                    func.count(Note.id).label('notes'),
+                    func.count(func.distinct(func.date(Note.created_at))).label('days')
+                )
+                .where(
+                    Note.user_id == user_id,
+                    Note.created_at >= weeks_ago,
+                    Note.is_deleted == False
+                )
+                .group_by('week')
+                .order_by('week')
+            )
+            weekly_data = weekly_stats.all()
+            
+            # === СРЕДНИЕ ПОКАЗАТЕЛИ ===
+            active_days = len(notes_by_date)
+            avg_notes_per_day = notes_count / 30 if notes_count > 0 else 0
+            avg_time_per_day = total_reading_time / 30 if total_reading_time > 0 else 0
+            avg_time_per_active_day = total_reading_time / active_days if active_days > 0 else 0
+            
+            # === ПРОГНОЗ НА 30 ДНЕЙ ===
+            if avg_notes_per_day > 0:
+                projected_notes = int(notes_count + avg_notes_per_day * 30)
+            else:
+                projected_notes = notes_count
+            
+            if avg_time_per_day > 0:
+                projected_time = int(total_reading_time + avg_time_per_day * 30)
+            else:
+                projected_time = total_reading_time
             
         except Exception as e:
-            await msg.edit_text(f"❌ Ошибка: {e}")
+            await loading_msg.edit_text(f"❌ Ошибка: {e}")
             return
     
-    # === ФОРМИРУЕМ КРАСИВЫЙ ТЕКСТОВЫЙ ОТЧЕТ ===
+    # === СОЗДАНИЕ ГРАФИКОВ ===
+    try:
+        fig = plt.figure(figsize=(16, 12), facecolor='white')
+        fig.suptitle('📊 Статистика чтения', fontsize=22, fontweight='bold', y=0.98)
+        
+        gs = fig.add_gridspec(3, 3, hspace=0.3, wspace=0.3)
+        
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#FF9F1C', '#2EC4B6']
+        
+        # === ГРАФИК 1: КРУГОВАЯ - КАТЕГОРИИ ===
+        ax1 = fig.add_subplot(gs[0, 0])
+        ax1.set_facecolor('white')
+        
+        if notes_by_category and sum(notes_by_category.values()) > 0:
+            names = list(notes_by_category.keys())
+            counts = list(notes_by_category.values())
+            
+            short_names = [n[:12] + '...' if len(n) > 12 else n for n in names]
+            
+            wedges, texts, autotexts = ax1.pie(
+                counts, 
+                labels=short_names,
+                colors=colors,
+                autopct='%1.0f%%',
+                startangle=90,
+                wedgeprops={'edgecolor': 'white', 'linewidth': 2}
+            )
+            
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontweight('bold')
+            
+            ax1.set_title('Заметки по категориям', fontsize=14, pad=15, fontweight='bold')
+            ax1.axis('equal')
+        
+        # === ГРАФИК 2: СТОЛБЦЫ - АКТИВНОСТЬ ===
+        ax2 = fig.add_subplot(gs[0, 1])
+        ax2.set_facecolor('white')
+        
+        if notes_by_date:
+            dates = sorted(notes_by_date.keys())[-10:]  # последние 10 дней
+            date_labels = [d.strftime('%d.%m') for d in dates]
+            note_counts = [notes_by_date.get(d, 0) for d in dates]
+            time_mins = [time_by_date.get(d, 0) / 60 for d in dates]
+            
+            x = range(len(dates))
+            width = 0.35
+            
+            bars1 = ax2.bar([i - width/2 for i in x], note_counts, width, 
+                           label='Заметки', color=colors[0], edgecolor='white')
+            bars2 = ax2.bar([i + width/2 for i in x], time_mins, width,
+                           label='Минуты', color=colors[1], edgecolor='white')
+            
+            ax2.set_title('Активность (10 дней)', fontsize=14, pad=15, fontweight='bold')
+            ax2.set_xticks(x)
+            ax2.set_xticklabels(date_labels, rotation=45, ha='right')
+            ax2.legend(fontsize=10)
+            ax2.grid(True, alpha=0.3, axis='y', linestyle='--')
+        
+        # === ГРАФИК 3: ВРЕМЯ ПО КАТЕГОРИЯМ ===
+        ax3 = fig.add_subplot(gs[0, 2])
+        ax3.set_facecolor('white')
+        
+        if time_by_category and sum(time_by_category.values()) > 0:
+            cat_names = list(time_by_category.keys())[:5]
+            cat_times = [t / 3600 for t in list(time_by_category.values())[:5]]  # в часах
+            
+            y_pos = range(len(cat_names))
+            bars = ax3.barh(y_pos, cat_times, color=colors[2], edgecolor='white', linewidth=2)
+            
+            ax3.set_yticks(y_pos)
+            ax3.set_yticklabels([n[:15] + '...' if len(n) > 15 else n for n in cat_names])
+            ax3.set_xlabel('Часы')
+            ax3.set_title('Время по категориям', fontsize=14, pad=15, fontweight='bold')
+            ax3.grid(True, alpha=0.3, axis='x', linestyle='--')
+            
+            for bar, hours in zip(bars, cat_times):
+                ax3.text(bar.get_width() + 0.1, bar.get_y() + bar.get_height()/2,
+                        f'{hours:.1f}ч', va='center', fontweight='bold')
+        
+        # === ГРАФИК 4: ТИПЫ МЕДИА ===
+        ax4 = fig.add_subplot(gs[1, 0])
+        ax4.set_facecolor('white')
+        
+        media_labels = []
+        media_values = []
+        media_colors = []
+        
+        if text_count > 0:
+            media_labels.append('Текст')
+            media_values.append(text_count)
+            media_colors.append(colors[3])
+        if photo_count > 0:
+            media_labels.append('Фото')
+            media_values.append(photo_count)
+            media_colors.append(colors[4])
+        if video_count > 0:
+            media_labels.append('Видео')
+            media_values.append(video_count)
+            media_colors.append(colors[5])
+        if voice_count > 0:
+            media_labels.append('Голос')
+            media_values.append(voice_count)
+            media_colors.append(colors[6])
+        if doc_count > 0:
+            media_labels.append('Документы')
+            media_values.append(doc_count)
+            media_colors.append(colors[7])
+        
+        if media_values:
+            wedges, texts, autotexts = ax4.pie(
+                media_values, 
+                labels=media_labels,
+                colors=media_colors,
+                autopct='%1.0f%%',
+                startangle=90,
+                wedgeprops={'edgecolor': 'white', 'linewidth': 2}
+            )
+            
+            for autotext in autotexts:
+                autotext.set_color('white')
+                autotext.set_fontweight('bold')
+            
+            ax4.set_title('Типы заметок', fontsize=14, pad=15, fontweight='bold')
+            ax4.axis('equal')
+        
+        # === ГРАФИК 5: ВРЕМЯ СУТОК ===
+        ax5 = fig.add_subplot(gs[1, 1])
+        ax5.set_facecolor('white')
+        
+        if total_reading_time > 0:
+            time_labels = ['Утро', 'День', 'Вечер', 'Ночь']
+            time_values = [morning/3600, afternoon/3600, evening/3600, night/3600]
+            time_colors = ['#FFD93D', '#FF9F1C', '#2EC4B6', '#5E60CE']
+            
+            bars = ax5.bar(time_labels, time_values, color=time_colors, edgecolor='white', linewidth=2)
+            
+            ax5.set_ylabel('Часы')
+            ax5.set_title('Время чтения', fontsize=14, pad=15, fontweight='bold')
+            ax5.grid(True, alpha=0.3, axis='y', linestyle='--')
+            
+            for bar, hours in zip(bars, time_values):
+                if hours > 0:
+                    ax5.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.1,
+                            f'{hours:.1f}ч', ha='center', va='bottom', fontweight='bold')
+        
+        # === ГРАФИК 6: НЕДЕЛЬНАЯ АКТИВНОСТЬ ===
+        ax6 = fig.add_subplot(gs[1, 2])
+        ax6.set_facecolor('white')
+        
+        if weekly_data:
+            weeks = [f'Нед {i+1}' for i in range(min(len(weekly_data), 8))]
+            week_notes = [w[1] for w in weekly_data[-8:]]
+            week_days = [w[2] for w in weekly_data[-8:]]
+            
+            x = range(len(weeks))
+            width = 0.35
+            
+            bars1 = ax6.bar([i - width/2 for i in x], week_notes, width,
+                           label='Заметки', color=colors[5], edgecolor='white')
+            bars2 = ax6.bar([i + width/2 for i in x], week_days, width,
+                           label='Дни', color=colors[6], edgecolor='white')
+            
+            ax6.set_title('Активность по неделям', fontsize=14, pad=15, fontweight='bold')
+            ax6.set_xticks(x)
+            ax6.set_xticklabels(weeks, rotation=45, ha='right')
+            ax6.legend(fontsize=10)
+            ax6.grid(True, alpha=0.3, axis='y', linestyle='--')
+        
+        # === ГРАФИК 7: ПРОГРЕСС УРОВНЯ ===
+        ax7 = fig.add_subplot(gs[2, :])
+        ax7.set_facecolor('white')
+        
+        # Уровни от 1 до 50
+        current_level = min(49, notes_count // 5 + 1)
+        current_exp = notes_count % 5
+        next_level_exp = 5
+        
+        # Визуализация прогресса
+        level_colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#FF9F1C']
+        
+        # Полоса прогресса
+        progress_bars = []
+        for i in range(10):
+            if i < current_exp:
+                progress_bars.append(1)
+            else:
+                progress_bars.append(0)
+        
+        bar_x = range(10)
+        bar_colors = [colors[0] if x == 1 else '#E0E0E0' for x in progress_bars]
+        
+        bars = ax7.bar(bar_x, [1]*10, color=bar_colors, edgecolor='white', linewidth=2)
+        
+        ax7.set_xlim(-0.5, 9.5)
+        ax7.set_ylim(0, 1.5)
+        ax7.set_xticks([])
+        ax7.set_yticks([])
+        ax7.spines['top'].set_visible(False)
+        ax7.spines['right'].set_visible(False)
+        ax7.spines['bottom'].set_visible(False)
+        ax7.spines['left'].set_visible(False)
+        
+        ax7.text(5, 0.5, f'Уровень {current_level} • {current_exp}/5 XP',
+                ha='center', va='center', fontsize=14, fontweight='bold')
+        
+        ax7.set_title('Прогресс уровня', fontsize=14, pad=20, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        # Сохраняем график
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=120, bbox_inches='tight', facecolor='white')
+        buf.seek(0)
+        plt.close(fig)
+        
+        await loading_msg.delete()
+        await message.answer_photo(
+            BufferedInputFile(buf.getvalue(), filename="stats.png"),
+            caption="📈 Продвинутая статистика чтения"
+        )
+        
+    except Exception as e:
+        print(f"Ошибка графиков: {e}")
+        await loading_msg.edit_text("📊 Загружаю текстовую статистику...")
     
-    # Шапка
-    text = (
+    # === ТЕКСТОВАЯ СТАТИСТИКА С ДОСТИЖЕНИЯМИ ===
+    
+    # === СИСТЕМА УРОВНЕЙ (50 УРОВНЕЙ) ===
+    level = min(50, notes_count // 5 + 1)
+    exp_current = notes_count % 5
+    exp_next = 5
+    exp_total = notes_count
+    exp_for_next = level * 5
+    
+    # Названия уровней
+    level_titles = {
+        range(1, 6): "🌱 НОВИЧОК",
+        range(6, 11): "📖 ЧИТАТЕЛЬ",
+        range(11, 16): "📚 КНИГОЛЮБ",
+        range(16, 21): "🔍 ИССЛЕДОВАТЕЛЬ",
+        range(21, 26): "🧠 МЫСЛИТЕЛЬ",
+        range(26, 31): "⚡ ЭРУДИТ",
+        range(31, 36): "💫 МАСТЕР",
+        range(36, 41): "🏆 ПРОФЕССОР",
+        range(41, 46): "👑 МАГИСТР",
+        range(46, 51): "✨ ЛЕГЕНДА"
+    }
+    
+    level_title = "🌱 НОВИЧОК"
+    for level_range, title in level_titles.items():
+        if level in level_range:
+            level_title = title
+            break
+    
+    # === ОГОНЕК (DUOLINGO СТИЛЬ) ===
+    if streak == 0:
+        fire = "🕯️"
+        fire_text = "Начните серию сегодня!"
+    elif streak < 3:
+        fire = "🔥" * streak
+        fire_text = f"{streak} дня подряд! 🔥"
+    elif streak < 7:
+        fire = "🔥" * 3 + f" +{streak-3}"
+        fire_text = f"{streak} дней! Вы в ритме! 🔥"
+    elif streak < 14:
+        fire = "🔥🔥🔥" + f" +{streak-3}"
+        fire_text = f"{streak} дней! Не останавливайтесь! 🔥"
+    elif streak < 30:
+        fire = "🔥🔥🔥🔥" + f" +{streak-4}"
+        fire_text = f"{streak} дней! Фантастика! 🔥"
+    elif streak < 60:
+        fire = "🔥" * 5 + f" +{streak-5}"
+        fire_text = f"{streak} дней! Вы легенда! 👑"
+    else:
+        fire = "🔥" * 5 + "∞"
+        fire_text = f"{streak}+ дней! Бессмертный! ⚡"
+    
+    # === ДОСТИЖЕНИЯ (30+ ШТУК) ===
+    achievements = []
+    
+    # 1-5. КАТЕГОРИИ
+    if categories_count >= 1:
+        achievements.append(("📁 Первая категория", categories_count >= 1))
+    if categories_count >= 3:
+        achievements.append(("📚 Три книги", categories_count >= 3))
+    if categories_count >= 5:
+        achievements.append(("🏛️ Библиотека", categories_count >= 5))
+    if categories_count >= 10:
+        achievements.append(("🎓 Книжный клуб", categories_count >= 10))
+    if categories_count >= 20:
+        achievements.append(("🏰 Архив знаний", categories_count >= 20))
+    
+    # 6-15. ЗАМЕТКИ
+    if notes_count >= 1:
+        achievements.append(("📝 Первая заметка", notes_count >= 1))
+    if notes_count >= 10:
+        achievements.append(("📄 10 заметок", notes_count >= 10))
+    if notes_count >= 25:
+        achievements.append(("📑 25 заметок", notes_count >= 25))
+    if notes_count >= 50:
+        achievements.append(("📚 50 заметок", notes_count >= 50))
+    if notes_count >= 100:
+        achievements.append(("📖 100 заметок", notes_count >= 100))
+    if notes_count >= 250:
+        achievements.append(("📕 250 заметок", notes_count >= 250))
+    if notes_count >= 500:
+        achievements.append(("📘 500 заметок", notes_count >= 500))
+    if notes_count >= 1000:
+        achievements.append(("📗 1000 заметок", notes_count >= 1000))
+    if notes_count >= 2500:
+        achievements.append(("📙 Энциклопедия", notes_count >= 2500))
+    if notes_count >= 5000:
+        achievements.append(("🏆 Библиотекарь", notes_count >= 5000))
+    
+    # 16-20. ВРЕМЯ
+    hours_reading = total_reading_time / 3600
+    if hours_reading >= 1:
+        achievements.append(("⏱️ 1 час", hours_reading >= 1))
+    if hours_reading >= 5:
+        achievements.append(("🕐 5 часов", hours_reading >= 5))
+    if hours_reading >= 10:
+        achievements.append(("⌛ 10 часов", hours_reading >= 10))
+    if hours_reading >= 50:
+        achievements.append(("⏳ 50 часов", hours_reading >= 50))
+    if hours_reading >= 100:
+        achievements.append(("⌚ 100 часов", hours_reading >= 100))
+    
+    # 21-25. СТРЕЙК
+    if streak >= 3:
+        achievements.append(("🔥 3 дня", streak >= 3))
+    if streak >= 7:
+        achievements.append(("🔥🔥 Неделя", streak >= 7))
+    if streak >= 14:
+        achievements.append(("⚡ 2 недели", streak >= 14))
+    if streak >= 30:
+        achievements.append(("🌋 Месяц", streak >= 30))
+    if streak >= 100:
+        achievements.append(("🌟 100 дней", streak >= 100))
+    
+    # 26-30. МЕДИА
+    if photo_count >= 1:
+        achievements.append(("📸 Первое фото", photo_count >= 1))
+    if photo_count >= 10:
+        achievements.append(("📷 Фотоальбом", photo_count >= 10))
+    if voice_count >= 1:
+        achievements.append(("🎤 Первый голос", voice_count >= 1))
+    if video_count >= 1:
+        achievements.append(("🎥 Первое видео", video_count >= 1))
+    if doc_count >= 1:
+        achievements.append(("📎 Первый документ", doc_count >= 1))
+    
+    # 31-35. СПЕЦИАЛЬНЫЕ
+    if len(notes_by_category) >= 2 and max(notes_by_category.values()) >= 10:
+        achievements.append(("🎯 Фокус", True))
+    if total_sessions >= 10:
+        achievements.append(("🎯 10 сессий", total_sessions >= 10))
+    if avg_session_time >= 1800:  # 30 минут
+        achievements.append(("🧘 Глубокое чтение", avg_session_time >= 1800))
+    if morning > afternoon and morning > evening and morning > night:
+        achievements.append(("🌅 Жаворонок", True))
+    if night > 7200:  # 2 часа ночью
+        achievements.append(("🦉 Сова", night >= 7200))
+    
+    # Подсчет выполненных достижений
+    earned_achievements = [a[0] for a in achievements if a[1]]
+    achievement_count = len(earned_achievements)
+    total_achievements = len([a for a in achievements if a[1] is not False])  # Примерно
+    
+    # === ЕЖЕДНЕВНЫЕ ЦЕЛИ ===
+    daily_goals = []
+    
+    # Цель 1: Заметки сегодня
+    today_notes = notes_by_date.get(today, 0)
+    daily_goals.append(("📝 Заметки сегодня", today_notes, 3))
+    
+    # Цель 2: Время сегодня
+    today_time = time_by_date.get(today, 0) / 60  # в минутах
+    daily_goals.append(("⏱️ Минуты сегодня", int(today_time), 30))
+    
+    # Цель 3: Серия
+    daily_goals.append(("🔥 Дней подряд", streak, 7))
+    
+    # Цель 4: Недельная цель
+    weekly_goal = last_7_days_notes
+    daily_goals.append(("📊 Заметок за 7 дней", weekly_goal, 10))
+    
+    # === ФОРМИРУЕМ ТЕКСТ ===
+    stats_text = (
         f"📊 <b>СТАТИСТИКА ЧТЕНИЯ</b>\n"
-        f"{'▬' * 25}\n\n"
+        f"{'═' * 35}\n\n"
+        
+        f"<b>{level_title}</b> • Уровень {level}\n"
+        f"{'█' * exp_current}{'░' * (exp_next - exp_current)} {exp_current}/{exp_next} XP\n"
+        f"✨ Всего опыта: {exp_total} XP\n\n"
+        
+        f"{fire} <b>СЕРИЯ:</b> {fire_text}\n"
+        f"🏆 <b>Рекорд:</b> {max_streak} дней\n"
+        f"🎯 <b>Достижений:</b> {achievement_count}+ / 35\n\n"
     )
+    
+    # Ежедневные цели
+    stats_text += f"📋 <b>ЕЖЕДНЕВНЫЕ ЦЕЛИ:</b>\n"
+    for goal_name, current, target in daily_goals:
+        if current >= target:
+            stats_text += f"  ✅ {goal_name}: {current}/{target}\n"
+        else:
+            progress = int((current / target) * 10)
+            bar = '█' * progress + '░' * (10 - progress)
+            stats_text += f"  ⏳ {goal_name}: {bar} {current}/{target}\n"
+    stats_text += "\n"
     
     # Основная статистика
-    text += (
-        f"📂 <b>Категории:</b> {categories_count}\n"
-        f"📝 <b>Всего заметок:</b> {notes_count}\n"
-        f"⏱️ <b>Сессий чтения:</b> {total_sessions}\n"
-        f"🕐 <b>Всего времени:</b> {format_time_short(int(total_reading_time))}\n"
-        f"📊 <b>Среднее за сессию:</b> {format_time_short(int(avg_session_time))}\n\n"
+    stats_text += (
+        f"📂 <b>КАТЕГОРИИ:</b> {categories_count}\n"
+        f"📝 <b>ЗАМЕТКИ:</b> {notes_count}\n"
+        f"⏱️ <b>СЕССИИ:</b> {total_sessions}\n"
+        f"🕐 <b>ВРЕМЯ:</b> {format_time_short(int(total_reading_time))} ({hours_reading:.1f}ч)\n"
+        f"📊 <b>АКТИВНЫХ ДНЕЙ:</b> {active_days}/30\n\n"
     )
     
-    # Распределение по категориям
-    if notes_by_category:
-        text += f"📚 <b>КАТЕГОРИИ:</b>\n"
-        for i, (cat_name, cat_count) in enumerate(list(notes_by_category.items())[:5], 1):
-            percent = (cat_count / notes_count * 100) if notes_count > 0 else 0
-            bar_len = int(percent / 5)
-            bar = '█' * bar_len + '░' * (20 - bar_len)
-            text += f"{i}. <b>{cat_name[:20]}</b>\n   {bar} {cat_count} ({percent:.0f}%)\n"
-        text += "\n"
+    # Средние показатели
+    stats_text += (
+        f"📈 <b>СРЕДНИЕ ПОКАЗАТЕЛИ:</b>\n"
+        f"  • Заметок в день: {avg_notes_per_day:.1f}\n"
+        f"  • Времени в день: {format_time_short(int(avg_time_per_day))}\n"
+        f"  • В активный день: {format_time_short(int(avg_time_per_active_day))}\n"
+        f"  • За сессию: {format_time_short(int(avg_session_time))}\n"
+        f"  • Эффективность: {notes_count/max(1, total_reading_time/3600):.1f} зам/час\n\n"
+    )
     
-    # Последние заметки
-    if recent_notes:
-        text += f"🕐 <b>ПОСЛЕДНИЕ ЗАМЕТКИ:</b>\n"
-        for content, date in recent_notes:
-            date_str = date.strftime('%d.%m.%Y')
-            short = content[:30] + '...' if len(content) > 30 else content
-            text += f"• {date_str}: <i>{short}</i>\n"
-        text += "\n"
+    # Прогноз
+    stats_text += (
+        f"🔮 <b>ПРОГНОЗ НА 30 ДНЕЙ:</b>\n"
+        f"  • Заметки: {projected_notes} (+{projected_notes - notes_count})\n"
+        f"  • Время: {format_time_short(projected_time)} (+{format_time_short(projected_time - total_reading_time)})\n"
+        f"  • Уровень: {min(50, projected_notes // 5 + 1)} ({projected_notes // 5 + 1 - level} ур.)\n\n"
+    )
+    
+    # Топ категории
+    if notes_by_category:
+        stats_text += f"📚 <b>ТОП КАТЕГОРИЙ:</b>\n"
+        for i, (cat, cnt) in enumerate(list(notes_by_category.items())[:3], 1):
+            percent = (cnt / notes_count * 100) if notes_count > 0 else 0
+            stats_text += f"  {i}. <b>{cat[:20]}</b>: {cnt} ({percent:.0f}%)\n"
+        stats_text += "\n"
     
     # Достижения
-    text += f"🏆 <b>ДОСТИЖЕНИЯ:</b>\n"
+    if earned_achievements:
+        stats_text += f"🏆 <b>ПОСЛЕДНИЕ ДОСТИЖЕНИЯ:</b>\n"
+        for ach in earned_achievements[-5:]:
+            stats_text += f"  {ach}\n"
+        stats_text += "\n"
     
-    if notes_count >= 100:
-        text += f"👑 <b>Магистр чтения:</b> 100+ заметок!\n"
-        level = "МАГИСТР"
-    elif notes_count >= 50:
-        text += f"🏅 <b>Заядлый читатель:</b> 50+ заметок!\n"
-        level = "ПРОФИ"
-    elif notes_count >= 20:
-        text += f"📖 <b>Активный читатель:</b> 20+ заметок!\n"
-        level = "АКТИВИСТ"
-    elif notes_count >= 10:
-        text += f"🌱 <b>Начинающий:</b> 10+ заметок!\n"
-        level = "НОВИЧОК"
-    else:
-        text += f"🚀 <b>Старт:</b> сделайте первые 10 заметок\n"
-        level = "СТАРТ"
-    
-    if total_reading_time >= 36000:
-        text += f"⏳ <b>Книжный червь:</b> 10+ часов чтения!\n"
-    elif total_reading_time >= 3600:
-        text += f"⏱️ <b>В ритме книг:</b> 1+ час чтения\n"
-    
-    text += f"\n🎯 <b>ТЕКУЩИЙ УРОВЕНЬ: {level}</b>\n"
-    
-    # Прогресс до следующего уровня
+    # Следующие достижения
+    next_achievements = []
     if notes_count < 10:
-        next_level = 10
-        progress = notes_count / 10 * 100
-        bar = '█' * int(progress / 5) + '░' * (20 - int(progress / 5))
-        text += f"До «НОВИЧОК»: {notes_count}/10\n{bar} {progress:.0f}%\n"
-    elif notes_count < 20:
-        progress = (notes_count - 10) / 10 * 100
-        bar = '█' * int(progress / 5) + '░' * (20 - int(progress / 5))
-        text += f"До «АКТИВИСТ»: {notes_count}/20\n{bar} {progress:.0f}%\n"
+        next_achievements.append(f"📄 10 заметок ({notes_count}/10)")
+    elif notes_count < 25:
+        next_achievements.append(f"📑 25 заметок ({notes_count}/25)")
     elif notes_count < 50:
-        progress = (notes_count - 20) / 30 * 100
-        bar = '█' * int(progress / 5) + '░' * (20 - int(progress / 5))
-        text += f"До «ПРОФИ»: {notes_count}/50\n{bar} {progress:.0f}%\n"
+        next_achievements.append(f"📚 50 заметок ({notes_count}/50)")
     elif notes_count < 100:
-        progress = (notes_count - 50) / 50 * 100
-        bar = '█' * int(progress / 5) + '░' * (20 - int(progress / 5))
-        text += f"До «МАГИСТР»: {notes_count}/100\n{bar} {progress:.0f}%\n"
+        next_achievements.append(f"📖 100 заметок ({notes_count}/100)")
     
-    # Совет дня
-    text += f"\n💡 <b>СОВЕТ ДНЯ:</b>\n"
-    if notes_count < 10:
-        text += f"   Делайте хотя бы 1 заметку в день! Привычка = 21 день ✨"
-    elif notes_count < 30:
-        text += f"   Отличный старт! Добавляйте фото к заметкам 📸"
-    elif notes_count < 50:
-        text += f"   Используйте таймер чтения для отслеживания времени ⏱️"
-    elif notes_count < 100:
-        text += f"   Потрясающий прогресс! Делитесь книгами с друзьями 👥"
+    if hours_reading < 5:
+        next_achievements.append(f"🕐 5 часов ({hours_reading:.1f}/5)")
+    elif hours_reading < 10:
+        next_achievements.append(f"⌛ 10 часов ({hours_reading:.1f}/10)")
+    
+    if streak < 7:
+        next_achievements.append(f"🔥 Неделя ({streak}/7)")
+    
+    if next_achievements:
+        stats_text += f"🎯 <b>СЛЕДУЮЩИЕ ДОСТИЖЕНИЯ:</b>\n"
+        for ach in next_achievements[:3]:
+            stats_text += f"  {ach}\n"
+        stats_text += "\n"
+    
+    # Совет дня (персонализированный)
+    if streak == 0:
+        tip = "🔥 Начните серию сегодня! Сделайте хотя бы 1 заметку"
+    elif streak == 1:
+        tip = "🔥 Уже 1 день! Завтра сделайте ещё заметку — будет серия!"
+    elif streak == 6:
+        tip = "🔥 Ещё 1 день до недели! Вы справитесь!"
+    elif streak == 13:
+        tip = "⚡ Завтра будет 2 недели! Фантастика!"
+    elif streak == 29:
+        tip = "🌋 Завтра будет МЕСЯЦ чтения! Вы легенда!"
+    elif notes_count < 10:
+        tip = "📝 Осталось {}/10 до достижения '10 заметок'".format(10 - notes_count)
+    elif hours_reading < 5:
+        tip = "⏱️ Ещё {:.1f} часов до 5 часов чтения".format(5 - hours_reading)
+    elif level < 10:
+        tip = "📚 До уровня ЧИТАТЕЛЬ: {} XP".format(level * 5 - exp_total)
+    elif not media_counts.get(MediaType.PHOTO, 0):
+        tip = "📸 Попробуйте добавить фото к заметкам!"
+    elif not media_counts.get(MediaType.VOICE, 0):
+        tip = "🎤 Запишите голосовую заметку — это удобно!"
     else:
-        text += f"   Вы легенда! Поставьте цель 200 заметок 🎯"
+        tips = [
+            "📚 Читайте каждый день хотя бы 20 минут",
+            "🎯 Поставьте цель на неделю: 10 заметок",
+            "⏱️ Используйте таймер чтения для статистики",
+            "📸 Фотографируйте интересные страницы",
+            "💭 Делайте заметки сразу после чтения",
+            "🔥 {streak} дней подряд — отличный результат!",
+            "📈 Сравните свою активность с прошлой неделей",
+            "🏆 Следующая цель: 100 заметок"
+        ]
+        tip = random.choice(tips)
     
-    await msg.edit_text(text, parse_mode='HTML')
-# ===========================================
+    tip = tip.replace("{streak}", str(streak))
+    stats_text += f"💡 <b>СОВЕТ ДНЯ:</b>\n{tip}"
+    
+    await message.answer(stats_text, parse_mode='HTML')# ===========================================
 # ТЕКСТОВЫЕ СООБЩЕНИЯ
 # ===========================================
 @dp.message(F.text)
