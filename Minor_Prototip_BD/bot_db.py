@@ -99,6 +99,10 @@ def format_time_short(seconds: int) -> str:
         minutes = (seconds % 3600) // 60
         return f"{hours}ч {minutes:02d}м"
 
+    def localize_time(dt: datetime) -> datetime:
+    """Преобразует UTC время в московское (UTC+3)"""
+    return dt + timedelta(hours=3)
+
 def get_main_keyboard():
     """Основная клавиатура"""
     return ReplyKeyboardMarkup(
@@ -1174,7 +1178,11 @@ async def show_category_notes(query: CallbackQuery):
             MediaType.DOCUMENT: "📄"
         }.get(note.media_type, "📎")
         
-        created_time = note.created_at.strftime('%d.%m.%Y %H:%M') if note.created_at else "без даты"
+        if note.created_at:
+            local_time = localize_time(note.created_at)
+            created_time = local_time.strftime('%d.%m.%Y %H:%M')
+        else:
+            created_time = "без даты"
         
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [
@@ -1723,7 +1731,7 @@ async def show_statistics(message: Message):
     if recent_notes:
         text += f"🕐 <b>ПОСЛЕДНИЕ ЗАМЕТКИ:</b>\n"
         for content, date in recent_notes[:3]:
-            date_str = date.strftime('%d.%m')
+            date_str = localize_time(date).strftime('%d.%m')
             short_content = content[:25] + "..." if len(content) > 25 else content
             text += f"  • {date_str}: {short_content}\n"
         text += "\n"
