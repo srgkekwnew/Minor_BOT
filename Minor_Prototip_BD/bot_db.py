@@ -327,9 +327,10 @@ async def cmd_start(message: Message):
 # ===========================================
 @dp.message(F.text == "⏱️ Таймер чтения")
 @dp.message(Command("timer"))
-async def start_timer_command(message: Message, state: FSMContext):
+async def start_timer_command(message: Message, state: FSMContext, user_id: int = None):
     """Начало работы с таймером"""
-    user_id = message.from_user.id
+    if user_id is None:
+        user_id = message.from_user.id  # обычный вызов из сообщения
     
     if user_id in active_timers:
         await message.answer(
@@ -341,23 +342,10 @@ async def start_timer_command(message: Message, state: FSMContext):
         return
     
     async with AsyncSessionLocal() as session:
-        # Диагностика
-        print(f"DEBUG: start_timer_command for user_id={user_id}")
-        # Проверка подключения к БД
-        try:
-            await session.execute(select(1))
-            print("DEBUG: DB connection OK")
-        except Exception as e:
-            print(f"DEBUG: DB connection error: {e}")
-        
         result = await session.execute(
             select(Category).where(Category.user_id == user_id)
         )
         categories = result.scalars().all()
-        
-        print(f"DEBUG: categories count = {len(categories)}")
-        if categories:
-            print(f"DEBUG: first category name: {categories[0].name}")
     
     if not categories:
         await message.answer(
@@ -384,6 +372,7 @@ async def start_timer_command(message: Message, state: FSMContext):
         parse_mode='HTML'
     )
     await state.set_state(TimerState.waiting_for_timer_category)
+
 @dp.callback_query(TimerState.waiting_for_timer_category)
 async def select_timer_category(query: CallbackQuery, state: FSMContext):
     """Выбор категории для таймера"""
@@ -569,7 +558,8 @@ async def show_stats_after_timer(query: CallbackQuery):
 @dp.callback_query(F.data == "start_timer")
 async def start_timer_callback(query: CallbackQuery, state: FSMContext):
     """Запуск таймера из callback"""
-    await start_timer_command(query.message, state)
+    # Передаём правильный user_id из query
+    await start_timer_command(query.message, state, user_id=query.from_user.id)
     await query.answer()
 
 @dp.message(Command("stop_timer"))
