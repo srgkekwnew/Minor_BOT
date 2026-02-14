@@ -684,8 +684,8 @@ async def handle_media_from_timer(message: Message, state: FSMContext):
             parse_mode='HTML'
         )
     
-    # НЕ очищаем состояние полностью, только сбрасываем флаг таймера
-    await state.update_data(from_timer=False)
+    # Очищаем состояние после добавления медиа (чтобы не оставаться в режиме ожидания)
+    await state.clear()
 
 @dp.message(AddMediaNoteState.waiting_for_media)
 async def handle_media_input(message: Message, state: FSMContext):
@@ -705,6 +705,7 @@ async def handle_media_input(message: Message, state: FSMContext):
             "❌ Сначала выберите категорию!\n\n"
             "Нажмите «📚 Категории» или используйте /category"
         )
+        await state.clear()
         return
     
     caption = message.caption or ""
