@@ -1,6 +1,6 @@
 ﻿"""
 HSEBookNotes Bot - основной файл бота с таймером чтения
-Версия 3.0.0 - ИСПРАВЛЕННАЯ
+Версия 3.0.0 - ПОЛНОСТЬЮ ИСПРАВЛЕННАЯ
 """
 
 import asyncio
@@ -8,7 +8,7 @@ import io
 import time
 import random
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -112,7 +112,7 @@ def get_main_keyboard():
     )
 
 # ===========================================
-# ФУНКЦИЯ СОЗДАНИЯ ГРАФИКОВ (ТОЛЬКО ОДНА!)
+# ФУНКЦИЯ СОЗДАНИЯ ГРАФИКОВ
 # ===========================================
 def create_reading_stats_chart(notes_by_date: dict, time_by_date: dict):
     """Создать 2 графика: заметки и время по дням"""
@@ -611,6 +611,7 @@ async def handle_media_from_timer(message: Message, state: FSMContext):
     category_name = timer_data["category_name"]
     caption = message.caption or ""
     
+    # Обновляем счетчики в таймере
     timer_data["media_notes_count"] = timer_data.get("media_notes_count", 0) + 1
     
     if message.photo:
@@ -682,7 +683,9 @@ async def handle_media_from_timer(message: Message, state: FSMContext):
             f"⏱️ Таймер: <b>Продолжает работать</b>",
             parse_mode='HTML'
         )
-    await state.clear()
+    
+    # НЕ очищаем состояние полностью, только сбрасываем флаг таймера
+    await state.update_data(from_timer=False)
 
 @dp.message(AddMediaNoteState.waiting_for_media)
 async def handle_media_input(message: Message, state: FSMContext):
@@ -695,7 +698,6 @@ async def handle_media_input(message: Message, state: FSMContext):
         return
     
     user_id = message.from_user.id
-    data = await state.get_data()
     category_id = data.get("current_category")
     
     if not category_id:
@@ -813,11 +815,11 @@ async def handle_media_input(message: Message, state: FSMContext):
 @dp.message(AddMediaNoteState.waiting_for_caption)
 async def handle_media_caption(message: Message, state: FSMContext):
     """Обработка подписи к медиа"""
+    data = await state.get_data()
+    user_id = message.from_user.id
+    category_id = data.get("current_category")
+    
     if message.text and message.text.lower() in ['/skip', 'пропустить', 'skip', 'нет']:
-        data = await state.get_data()
-        user_id = message.from_user.id
-        category_id = data.get("current_category")
-        
         if category_id:
             note = await save_media_note(data, user_id, category_id)
             async with AsyncSessionLocal() as session:
@@ -842,10 +844,9 @@ async def handle_media_caption(message: Message, state: FSMContext):
         await state.clear()
         return
     
+    # Обновляем подпись в состоянии
     await state.update_data(media_caption=message.text)
     data = await state.get_data()
-    user_id = message.from_user.id
-    category_id = data.get("current_category")
     
     if category_id:
         note = await save_media_note(data, user_id, category_id)
