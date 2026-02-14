@@ -341,10 +341,23 @@ async def start_timer_command(message: Message, state: FSMContext):
         return
     
     async with AsyncSessionLocal() as session:
+        # Диагностика
+        print(f"DEBUG: start_timer_command for user_id={user_id}")
+        # Проверка подключения к БД
+        try:
+            await session.execute(select(1))
+            print("DEBUG: DB connection OK")
+        except Exception as e:
+            print(f"DEBUG: DB connection error: {e}")
+        
         result = await session.execute(
             select(Category).where(Category.user_id == user_id)
         )
         categories = result.scalars().all()
+        
+        print(f"DEBUG: categories count = {len(categories)}")
+        if categories:
+            print(f"DEBUG: first category name: {categories[0].name}")
     
     if not categories:
         await message.answer(
@@ -371,7 +384,6 @@ async def start_timer_command(message: Message, state: FSMContext):
         parse_mode='HTML'
     )
     await state.set_state(TimerState.waiting_for_timer_category)
-
 @dp.callback_query(TimerState.waiting_for_timer_category)
 async def select_timer_category(query: CallbackQuery, state: FSMContext):
     """Выбор категории для таймера"""
