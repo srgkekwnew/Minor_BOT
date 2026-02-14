@@ -330,6 +330,13 @@ async def cmd_start(message: Message):
 async def start_timer_command(message: Message, state: FSMContext):
     """Начало работы с таймером"""
     user_id = message.from_user.id
+    print(f"DEBUG: start_timer_command for user_id={user_id}")
+    # Проверка подключения к БД
+    try:
+        await session.execute(select(1))
+        print("DEBUG: DB connection OK")
+    except Exception as e:
+        print(f"DEBUG: DB connection error: {e}")
     
     if user_id in active_timers:
         await message.answer(
@@ -376,6 +383,9 @@ async def start_timer_command(message: Message, state: FSMContext):
 async def select_timer_category(query: CallbackQuery, state: FSMContext):
     """Выбор категории для таймера"""
     try:
+        print(f"DEBUG: categories count = {len(category_name)}")
+        if category_id:
+            print(f"DEBUG: first category name: {category_name[0].name}")
         if query.data == "timer_no_category":
             category_id = None
             category_name = "Без категории"
