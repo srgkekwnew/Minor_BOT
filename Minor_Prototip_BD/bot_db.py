@@ -353,6 +353,7 @@ async def start_timer_command(message: Message, state: FSMContext):
             "Нажмите '➕ Новая категория' чтобы создать.",
             parse_mode='HTML'
         )
+        print(f"Категорий найдено: {len(categories)}")
         return
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
