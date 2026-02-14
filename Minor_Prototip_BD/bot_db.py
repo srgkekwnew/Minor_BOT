@@ -25,6 +25,7 @@ from aiogram.types import (
 )
 from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy import func, select
+from aiogram.filters import StateFilter
 
 # Импортируем обновленные модели и функции
 from init_db import (
@@ -1003,7 +1004,7 @@ async def select_category(query: CallbackQuery, state: FSMContext):
 # ===========================================
 # ТЕКСТОВЫЕ СООБЩЕНИЯ (СОХРАНЕНИЕ ЗАМЕТОК)
 # ===========================================
-@dp.message(F.text)
+@dp.message(F.text, StateFilter(None, TimerState.timer_running))
 async def save_note(message: Message, state: FSMContext):
     """Обработка текстовых сообщений для сохранения заметок"""
     text = message.text
@@ -1029,13 +1030,6 @@ async def save_note(message: Message, state: FSMContext):
         return
     
     if text.startswith('/'):
-        return
-
-    # ДОБАВЛЯЕМ ЭТУ ПРОВЕРКУ:
-    current_state = await state.get_state()
-    if current_state in [EditNoteState.waiting_for_new_text.state, 
-                         AddMediaNoteState.waiting_for_media.state, 
-                         AddMediaNoteState.waiting_for_caption.state]:
         return
 
     # Если пользователь в режиме таймера и пишет заметку
@@ -1075,7 +1069,8 @@ async def save_note(message: Message, state: FSMContext):
         f"<blockquote>{text[:100]}...</blockquote>",
         parse_mode='HTML'
     )
-# ===========================================
+    
+    # ===========================================
 # ЗАМЕТКИ (ПРОСМОТР)
 # ===========================================
 @dp.message(Command("notes"))
