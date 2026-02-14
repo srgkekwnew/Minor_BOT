@@ -1031,11 +1031,6 @@ async def save_note(message: Message, state: FSMContext):
     if text.startswith('/'):
         return
     
-    # Проверяем, не находимся ли мы в состоянии FSM
-    current_state = await state.get_state()
-    if current_state:
-        return
-    
     # Если пользователь в режиме таймера и пишет заметку
     user_id = message.from_user.id
     if user_id in active_timers:
